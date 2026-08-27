@@ -1,0 +1,35 @@
+{
+  "settings": {
+    "index": {
+      "knn": true,
+      "number_of_shards": 1,
+      "number_of_replicas": 0
+    }
+  },
+  "mappings": {
+    "properties": {
+      "file_id": { "type": "keyword" },
+      "chunk_id": { "type": "keyword" },
+      "chunk_seq": { "type": "integer" },
+      "meta_file_type": { "type": "keyword" },
+      "meta_file_size": { "type": "long" },
+      "updated_at": { "type": "date" },
+      "uploaded_at": { "type": "date" },
+      "content": { "type": "text" },
+      "embedding": {
+        "type": "knn_vector",
+        "dimension": 384,
+        "method": {
+          "name": "hnsw",
+          "engine": "lucene",
+          "space_type": "cosinesimil"
+        }
+      },
+      "allowed_roles": { "type": "keyword" },
+      "allowed_groups": { "type": "keyword" },
+      "object_store_path": { "type": "keyword" },
+      "ingestion_type": { "type": "keyword" },
+      "original_source": { "type": "keyword" }
+    }
+  }
+}

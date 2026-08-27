@@ -1,0 +1,18 @@
+{
+  "description": "Normalize and combine keyword + neural scores",
+  "phase_results_processors": [
+    {
+      "normalization-processor": {
+        "normalization": {
+          "technique": "min_max"
+        },
+        "combination": {
+          "technique": "arithmetic_mean",
+          "parameters": {
+            "weights": [0.3, 0.7]
+          }
+        }
+      }
+    }
+  ]
+}

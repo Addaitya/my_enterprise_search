@@ -1,0 +1,21 @@
+#!/bin/bash
+set -euo pipefail
+
+psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-EOSQL
+  DO \$\$
+  BEGIN
+    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '${KEYCLOAK_USER}') THEN
+      CREATE USER ${KEYCLOAK_USER} WITH PASSWORD '${KEYCLOAK_PASSWORD}';
+    END IF;
+    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '${APP_USER}') THEN
+      CREATE USER ${APP_USER} WITH PASSWORD '${APP_PASSWORD}';
+    END IF;
+  END
+  \$\$;
+
+  SELECT 'CREATE DATABASE ${KEYCLOAK_DB} OWNER ${KEYCLOAK_USER}'
+  WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = '${KEYCLOAK_DB}')\gexec
+
+  SELECT 'CREATE DATABASE ${APP_DB} OWNER ${APP_USER}'
+  WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = '${APP_DB}')\gexec
+EOSQL
