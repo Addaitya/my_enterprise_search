@@ -1,12 +1,28 @@
+# Secrets — copy from *.env.sample, never commit real values
 .env
+.env.*
+!.env.sample
+!.env.example
+backend/.env
+frontend/.env
+
+# Backend
 backend/.venv
 backend/__pycache__/
 backend/**/__pycache__/
 backend/*.egg-info
 backend/runtime_config.json
-frontend/node_modules
-frontend/dist
-frontend/.env
 *.pyc
 .python-version
+
+# Frontend
+frontend/node_modules
+frontend/dist
+frontend/dist-ssr
+*.local
+
+# OS / editor
 .DS_Store
+.idea
+.vscode/*
+!.vscode/extensions.json
