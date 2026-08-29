@@ -1,5 +1,7 @@
 # Auth setup — full implementation plan
 
+**Superseded for JWT keys:** OpenSearch is now **3.8.0**. Live `jwt_auth_domain` uses `type: jwt` + `jwks_uri` (Docker DNS). PEM `signing_key` and “2.19 cannot jwks_uri” below are historical. See `prompts/cursor_summary/update_opensearch_version.md` and `6_search_setup.md`.
+
 Working notes to implement **Task 1 (Auth)** from `prompts/cursor_summary/2_project_overview_tasks.md`. Scaffold already exists under `backend/`, `frontend/`, `docker-compose.yml`, and `docker_service_configs/`. This file is the source of truth for the auth slice. Do not invent a second identity model.
 
 **Agent rules while implementing**
