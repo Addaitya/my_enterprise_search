@@ -10,8 +10,8 @@ from app.core.config import get_settings, save_runtime_config
 
 CONFIG_DIR = Path(__file__).resolve().parents[2] / "docker_service_configs" / "opensearch"
 MODEL_GROUP_NAME = "enterprise-search-embeddings"
-# ONNX: TorchScript 1.0.2 fails to deploy on OpenSearch 2.19
-# (aten::scaled_dot_product_attention). See OpenSearch forum.
+# ONNX: TorchScript 1.0.2 failed to deploy on OpenSearch 2.19
+# (aten::scaled_dot_product_attention). Keep ONNX on 3.8 unless proofs fail.
 MODEL_FORMAT = "ONNX"
 _TERMINAL_TASK_STATES = frozenset(
     {"COMPLETED", "FAILED", "CANCELLED", "COMPLETED_WITH_ERROR", "EXPIRED", "UNREACHABLE"}
@@ -212,7 +212,54 @@ def ensure_embedding_model() -> str:
     return model_id
 
 
-def ensure_index_and_pipelines() -> None:
+def _assert_index_compatible(client: httpx.Client, index: str, expected_dim: int, default_pipeline: str) -> None:
+    """G6: fail loudly on wrong mapping/settings; never auto-delete the index."""
+    mapping_body = _json(client.get(f"/{index}/_mapping"))
+    settings_body = _json(client.get(f"/{index}/_settings"))
+    props = mapping_body.get(index, {}).get("mappings", {}).get("properties", {})
+    index_settings = settings_body.get(index, {}).get("settings", {}).get("index", {})
+
+    problems: list[str] = []
+    for field, expected_type in (
+        ("file_id", "keyword"),
+        ("chunk_id", "keyword"),
+        ("content", "text"),
+        ("allowed_roles", "keyword"),
+        ("allowed_groups", "keyword"),
+    ):
+        actual = (props.get(field) or {}).get("type")
+        if actual != expected_type:
+            problems.append(f"{field} type={actual!r} (want {expected_type})")
+
+    embedding = props.get("embedding") or {}
+    if embedding.get("type") != "knn_vector":
+        problems.append(f"embedding type={embedding.get('type')!r} (want knn_vector)")
+    dim = embedding.get("dimension")
+    if dim is not None and int(dim) != expected_dim:
+        problems.append(f"embedding dimension={dim} (want {expected_dim})")
+    method = embedding.get("method") or {}
+    if method.get("engine") and method.get("engine") != "lucene":
+        problems.append(f"embedding engine={method.get('engine')!r} (want lucene)")
+    if method.get("space_type") and method.get("space_type") != "cosinesimil":
+        problems.append(f"embedding space_type={method.get('space_type')!r} (want cosinesimil)")
+
+    knn = str(index_settings.get("knn", "")).lower()
+    if knn not in {"true", "1"}:
+        problems.append(f"index.knn={index_settings.get('knn')!r} (want true)")
+    pipeline = index_settings.get("default_pipeline")
+    if pipeline != default_pipeline:
+        problems.append(f"default_pipeline={pipeline!r} (want {default_pipeline})")
+
+    if problems:
+        raise RuntimeError(
+            f"index {index} mapping/settings drift (G6). Delete it manually if this "
+            f"local volume may be wiped, then re-run init_services. Problems: "
+            + "; ".join(problems)
+        )
+    print(f"[ok] index {index} mapping/settings match required shape")
+
+
+def ensure_index_and_pipelines(model_id: str) -> None:
     """Create ingest/search pipelines and the chunk index if missing."""
     settings = get_settings()
     mapping_path = CONFIG_DIR / "index-mapping.json"
@@ -225,11 +272,14 @@ def ensure_index_and_pipelines() -> None:
     with _client() as client:
         if ingest_path.exists():
             pipeline = json.loads(ingest_path.read_text(encoding="utf-8"))
-            if settings.opensearch_model_id:
-                for processor in pipeline.get("processors", []):
-                    embedding = processor.get("text_embedding")
-                    if embedding is not None:
-                        embedding["model_id"] = settings.opensearch_model_id
+            patched = False
+            for processor in pipeline.get("processors", []):
+                embedding = processor.get("text_embedding")
+                if embedding is not None:
+                    embedding["model_id"] = model_id
+                    patched = True
+            if not patched:
+                raise RuntimeError("ingest-pipeline.json has no text_embedding processor")
             client.put(f"/_ingest/pipeline/{settings.opensearch_ingest_pipeline}", json=pipeline)
         if search_path.exists():
             client.put(
@@ -244,7 +294,12 @@ def ensure_index_and_pipelines() -> None:
             client.put(f"/{settings.opensearch_index}", json=mapping)
             print(f"[ok] created index {settings.opensearch_index}")
         else:
-            print(f"[ok] index {settings.opensearch_index} already exists")
+            _assert_index_compatible(
+                client,
+                settings.opensearch_index,
+                settings.opensearch_embedding_dim,
+                settings.opensearch_ingest_pipeline,
+            )
 
     save_runtime_config(
         {
@@ -260,5 +315,5 @@ def configure() -> None:
 
     configure_security()
     enable_ml_commons()
-    ensure_embedding_model()
-    ensure_index_and_pipelines()
+    model_id = ensure_embedding_model()
+    ensure_index_and_pipelines(model_id)

@@ -3,7 +3,6 @@
   "processors": [
     {
       "text_embedding": {
-        "model_id": "REPLACE_AT_INIT",
         "field_map": {
           "content": "embedding"
         }

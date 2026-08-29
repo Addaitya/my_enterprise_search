@@ -58,13 +58,8 @@ class Settings(BaseSettings):
     opensearch_initial_admin_password: str = ""
     opensearch_ingest_pipeline: str = "enterprise-search-embed"
     opensearch_search_pipeline: str = "enterprise-search-hybrid"
-    # opensearch_model_id: str | None = None
-
-    @property
-    def opensearch_model_id(self) -> str:
-        config = load_runtime_config()
-        return config.get("opensearch_model_id") if config.get("opensearch_model_id") else None
-   
+    # Overlay from runtime_config.json via get_settings(); not an env secret.
+    opensearch_model_id: str | None = None
 
     minio_endpoint: str = "localhost:9000"
     minio_root_user: str = "minioadmin"
