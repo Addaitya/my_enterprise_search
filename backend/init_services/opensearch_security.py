@@ -7,11 +7,13 @@ import httpx
 
 from app.core.config import get_settings
 
-ISSUER = "http://localhost:8080/realms/enterprise-search-realm"
 INDEX_NAME = "enterprise-search-chunks"
+# 3.8 jwt+JWKS expands attr.jwt.groups as a JSON array already. Extra []
+# becomes [["engineering"]] and DLS evaluation 500s. ${user.roles} still
+# expands as quoted scalars, so it keeps the wrapper brackets.
 FILES_SEARCHER_DLS = (
     '{"bool":{"should":[{"terms":{"allowed_roles":[${user.roles}]}},'
-    '{"terms":{"allowed_groups":[${attr.jwt.groups}]}}],"minimum_should_match":1}}'
+    '{"terms":{"allowed_groups":${attr.jwt.groups}}}],"minimum_should_match":1}}'
 )
 
 
@@ -36,23 +38,18 @@ def _json(response: httpx.Response) -> Any:
     return response.json()
 
 
-def _public_key_pem() -> str:
+def _jwks_uri() -> str:
+    """OpenSearch fetches JWKS from inside the compose network (not localhost)."""
     settings = get_settings()
-    response = httpx.get(
-        f"{settings.keycloak_url}/realms/{settings.keycloak_realm}",
-        timeout=10,
+    return (
+        f"{settings.keycloak_internal_url}/realms/{settings.keycloak_realm}"
+        "/protocol/openid-connect/certs"
     )
-    response.raise_for_status()
-    public_key = response.json().get("public_key") or ""
-    if not public_key:
-        raise RuntimeError("keycloak realm public_key missing; cannot configure OpenSearch JWT")
-    wrapped = "\n".join(public_key[i : i + 64] for i in range(0, len(public_key), 64))
-    pem = f"-----BEGIN PUBLIC KEY-----\n{wrapped}\n-----END PUBLIC KEY-----"
-    print(f"[ok] jwt signing_key from realm public_key {public_key[:8]}...{public_key[-8:]}")
-    return pem
 
 
-def _put_jwt_auth_domain(client: httpx.Client, signing_key: str) -> None:
+def _put_jwt_auth_domain(client: httpx.Client) -> None:
+    settings = get_settings()
+    jwks_uri = _jwks_uri()
     current = _json(client.get("/_plugins/_security/api/securityconfig"))
     dynamic = copy.deepcopy(current["config"]["dynamic"])
     authc = dynamic.setdefault("authc", {})
@@ -64,12 +61,12 @@ def _put_jwt_auth_domain(client: httpx.Client, signing_key: str) -> None:
             "type": "jwt",
             "challenge": False,
             "config": {
-                "signing_key": signing_key,
+                "jwks_uri": jwks_uri,
                 "jwt_header": "Authorization",
                 "subject_key": "preferred_username",
                 "roles_key": "roles",
                 "required_audience": "api-client",
-                "required_issuer": ISSUER,
+                "required_issuer": settings.keycloak_issuer,
                 "jwt_clock_skew_tolerance_seconds": 30,
             },
         },
@@ -93,7 +90,11 @@ def _put_jwt_auth_domain(client: httpx.Client, signing_key: str) -> None:
 def _put_roles(client: httpx.Client) -> None:
     searcher = {
         "description": "Read chunks allowed by role or group RACL",
-        "cluster_permissions": ["cluster_composite_ops_ro"],
+        "cluster_permissions": [
+            "cluster_composite_ops_ro",
+            "cluster:admin/opensearch/ml/predict",
+            "cluster:admin/opensearch/ml/models/get",
+        ],
         "index_permissions": [
             {
                 "index_patterns": [INDEX_NAME],
@@ -157,9 +158,9 @@ def _put_role_mappings(client: httpx.Client) -> None:
 
 def configure() -> None:
     """JWT auth domain, files_searcher DLS role, and all_access fix. Idempotent."""
-    signing_key = _public_key_pem()
     with _client() as client:
-        _put_jwt_auth_domain(client, signing_key)
+        _put_jwt_auth_domain(client)
+        print(f"[ok] jwt jwks_uri={_jwks_uri()} issuer={get_settings().keycloak_issuer}")
         _put_roles(client)
         _put_role_mappings(client)
         health = _json(client.get("/_cluster/health"))

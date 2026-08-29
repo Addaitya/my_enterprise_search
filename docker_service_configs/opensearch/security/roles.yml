@@ -1,18 +1,33 @@
 # Applied via Security REST API by init_services (not auto-loaded at boot).
-# DLS uses JWT authenticator attributes. ${user.roles} expands to a quoted
-# comma-separated list of backend roles from the flattened Keycloak `roles` claim.
+# Enable: PUT /_plugins/_security/api/roles/files_searcher
+# Command: cd backend && uv run python -m init_services
+#
+# DLS uses the captured Keycloak access token shape (top-level only):
+#   roles:  ["admin", "search-user"]   →  ${user.roles} after roles_key: roles
+#   groups: ["engineering"]            →  ${attr.jwt.groups}
+# Do not reference realm_access.roles (nested; empty in DLS).
+#
+# For that realm-admin token the query becomes:
+#   allowed_roles  ∩ {admin, search-user}
+#   OR allowed_groups ∩ {engineering}
 files_searcher:
-  description: "Read chunks allowed by role or group RACL"
+  description: "Read chunks allowed by role or group RACL; hybrid search needs ML predict"
   cluster_permissions:
     - "cluster_composite_ops_ro"
+    # Required so JWT users can run neural half of hybrid search (C4).
+    # 3.8 also needs models/get during neural query. Do not map ml_full_access.
+    - "cluster:admin/opensearch/ml/predict"
+    - "cluster:admin/opensearch/ml/models/get"
   index_permissions:
     - index_patterns:
         - "enterprise-search-chunks"
       allowed_actions:
         - "read"
         - "search"
+      # 3.8: ${attr.jwt.groups} is already a JSON array; do not wrap in [].
+      # ${user.roles} still needs [] (quoted scalars).
       dls: >-
-        {"bool":{"should":[{"terms":{"allowed_roles":[${user.roles}]}},{"terms":{"allowed_groups":[${attr.jwt.groups}]}}],"minimum_should_match":1}}
+        {"bool":{"should":[{"terms":{"allowed_roles":[${user.roles}]}},{"terms":{"allowed_groups":${attr.jwt.groups}}}],"minimum_should_match":1}}
 
 files_writer:
   description: "Backend service ingest and ACL updates; no DLS"

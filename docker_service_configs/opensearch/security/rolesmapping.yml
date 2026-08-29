@@ -1,0 +1,27 @@
+# Applied via Security REST API by init_services (not auto-loaded at boot).
+# This is the Keycloak → OpenSearch role map.
+#
+# JWT claim `roles` (top-level) becomes OpenSearch backend_roles because
+# jwt_auth_domain.roles_key is `roles`. Example realm-admin token:
+#   roles: ["admin", "search-user"]
+#   groups: ["engineering"]
+#
+# Only `search-user` is mapped to an OS security role. JWT `admin` must NOT
+# map to all_access (that name collides with the internal basic user `admin`).
+# DLS still sees both role names via ${user.roles}.
+#
+# Enable: PUT /_plugins/_security/api/rolesmapping/files_searcher
+# Command: cd backend && uv run python -m init_services
+
+files_searcher:
+  backend_roles:
+    - search-user
+  hosts: []
+  users: []
+
+# files_writer: mapped to nobody. Ingest uses internal user admin / all_access.
+
+all_access:
+  users:
+    - admin
+  backend_roles: []

@@ -1,13 +1,26 @@
-# JWT domain fragment for OpenSearch 2.19.1. Merge via Security REST API
-# (init_services/opensearch_security.py). This file is reference only — compose
-# does not mount it.
+# THIS is the OpenSearch ↔ Keycloak connection config (OpenSearch 3.8).
 #
-# OpenSearch 2.19 has no working jwks_uri on the jwt authenticator (that is
-# 3.3+). Fetch Keycloak realm `public_key` and wrap it as PEM in signing_key.
-# Re-run init_services after Keycloak realm key rotation.
+# OpenSearch 3.3+ supports jwks_uri on http_authenticator.type: jwt.
+# init_services PUTs this shape (no PEM copy on the happy path):
+#   PUT /_plugins/_security/api/securityconfig/config
+# Command: cd backend && uv run python -m init_services
+#
+# This file is reference only — compose does not mount it.
+#
+# Networking split (do not invert):
+#   jwks_uri         = Keycloak Docker DNS  http://keycloak:8080/.../certs
+#                      OpenSearch fetches keys from inside the compose network.
+#   required_issuer  = public token iss     http://localhost:8080/realms/...
+#                      Must match the JWT `iss` claim. localhost from the OS
+#                      container is the WRONG fetch URL (connection refused).
 #
 # http_authenticator.type MUST be jwt, not openid. ${attr.jwt.*} DLS is empty
 # with openid even when login succeeds.
+#
+# PEM signing_key is legacy/emergency fallback only (2.19 style). Omit it when
+# jwks_uri is set; OpenSearch ignores signing_key if jwks_uri is present.
+# Re-run init after changing jwks_uri / issuer / audience — not after Keycloak
+# realm key rotation (JWKS cache picks up a new kid).
 #
 # jwt_auth_domain:
 #   http_enabled: true
@@ -17,10 +30,7 @@
 #     type: jwt
 #     challenge: false
 #     config:
-#       signing_key: |
-#         -----BEGIN PUBLIC KEY-----
-#         <Keycloak realm public_key, wrapped at 64 chars>
-#         -----END PUBLIC KEY-----
+#       jwks_uri: http://keycloak:8080/realms/enterprise-search-realm/protocol/openid-connect/certs
 #       jwt_header: Authorization
 #       subject_key: preferred_username
 #       roles_key: roles
