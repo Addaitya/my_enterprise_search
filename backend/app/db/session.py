@@ -28,3 +28,8 @@ def get_session() -> Generator[Session, None, None]:
         yield session
     finally:
         session.close()
+
+
+def get_db() -> Generator[Session, None, None]:
+    """FastAPI dependency alias. Same engine as get_session; do not create a second one."""
+    yield from get_session()
