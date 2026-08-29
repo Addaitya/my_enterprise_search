@@ -1,10 +1,12 @@
 # Local ingestion — implemented 29 August 2026
 
-This slice is **implemented as of 29 August 2026**. It is Task 4 (Ingest API) only: a signed-in `search-user` or `admin` can upload **PDF / TXT / CSV** via a **Google Drive–style resumable, multi-step API** (initiate → PUT byte ranges → complete/process). Original bytes land in MinIO as **one full object**. Postgres gets a `files` row only (**no** `file_acl`). Text is extracted, chunked (**600 tokens**, **75-token overlap**), and bulk-indexed into `enterprise-search-chunks` **without** an `embedding` field (ingest pipeline fills **384-dim** vectors). Chunk identity uses existing **`chunk_id`** + **`chunk_seq`** only.
+This slice is **implemented as of 29 August 2026**. Task 4 (Ingest API): a signed-in `search-user` or `admin` can upload **PDF / TXT / CSV** via a **Google Drive–style resumable, multi-step API** (initiate → PUT byte ranges → complete/process). Original bytes land in MinIO as **one full object**. Postgres gets a `files` row only (**no** `file_acl`). Text is extracted, chunked (**600 tokens**, **75-token overlap**), and bulk-indexed into `enterprise-search-chunks` **without** an `embedding` field (ingest pipeline fills **384-dim** vectors). Chunk identity uses existing **`chunk_id`** + **`chunk_seq`** only.
 
-Auth is live (`prompts/summary/2_auth_layer.md`). Postgres identity + `files` / `file_acl` exist (`prompts/summary/3_data_modeling.md`). Search platform is live (`prompts/summary/4_search_layer.md`). Working plan: `prompts/cursor_summary/7_ingest_api.md` (G1–G8, C2/C4/C9 locked; MinIO no-chunking locked).
+**React multi-file uploader** (same day follow-on): `/upload` drives that API from the SPA — multi-select PDF/TXT/CSV, per-file progress, sequential resumable sessions, cancel/retry. Still **no** auto-ACL (files index but are not searchable until Task 6).
 
-**Not** in this slice: React uploader, `POST /search`, search UI, View files / Open stream, admin ACL CRUD, connectors, OCR, Celery/Redis.
+Auth is live (`prompts/summary/2_auth_layer.md`). Postgres identity + `files` / `file_acl` exist (`prompts/summary/3_data_modeling.md`). Search platform is live (`prompts/summary/4_search_layer.md`). Working plan: `prompts/cursor_summary/7_ingest_api.md` (G1–G8, C2/C4/C9 locked; MinIO no-chunking locked). G8 originally deferred React; the Drive-style client below supersedes that for the upload path only.
+
+**Not** done yet: `POST /search`, search UI, View files / Open stream, admin ACL CRUD, connectors, OCR, Celery/Redis.
 
 ---
 
@@ -23,7 +25,7 @@ JWT          → request authn/authz (upload routes); NOT used for OpenSearch wr
 ## Architecture (this slice)
 
 ```
-Client (curl / scripts/ingest_proof.py — no React)
+Client (React /upload · curl · scripts/ingest_proof.py)
   Authorization: Bearer <user JWT>
         │
         ├─ POST /files/uploads              → upload_id + upload_sessions row
@@ -58,7 +60,7 @@ CSV  → rows → serialize (all cols)
 | G3 | **No** auto `file_acl`. Chunks indexed with `allowed_roles: []`, `allowed_groups: []`. Never write `_empty`. |
 | G4–G6 | CSV like text; pack consecutive rows by token budget (not fixed N); serialize `ColumnName: value`; blank line between packed rows; skip empty cells. |
 | G7 | Drive-style resumable multi-step API (not single multipart POST). |
-| G8 | **API only** — no React uploader. |
+| G8 | Task 4 lock was **API only**. **Superseded for UI:** React Drive-style uploader shipped (multi-file `/upload`). API contract unchanged. |
 | C2 | **600** tokens / **75** overlap. Estimator ≈4 chars/token (no tiktoken / no OS tokenize). Embedding dim stays 384. |
 | C4 | **`pypdf`**; no OCR; empty PDF → **422**. |
 | C9 | Use existing `chunk_id` + `chunk_seq` only; no `row_index` / mapping migration. |
@@ -162,6 +164,23 @@ Schemas: `app/schemas/files.py`.
 
 `chunk_id` = OpenSearch `_id` = `{file_id}:{chunk_seq:06d}`. No FastAPI-side embeddings. No new OS fields.
 
+### F. React uploader (follow-on, 29 August 2026)
+
+Signed-in users open **`/upload`** (nav **Upload**). Same product rules as the API: PDF/TXT/CSV, **25 MiB** each, roles `search-user`|`admin` via existing `ProtectedRoute` + Bearer JWT.
+
+| Piece | Role |
+| --- | --- |
+| `frontend/src/api/client.ts` | `apiFetch` / GET / POST JSON / DELETE; silent refresh on 401; PUT uses `redirect: 'manual'` so Drive-style **308** Resume Incomplete is not followed by the browser |
+| `frontend/src/api/uploads.ts` | Client validation; `resumableUpload` = initiate → sequential **256 KiB** `Content-Range` PUTs → complete; cancel → DELETE |
+| `frontend/src/pages/Upload.tsx` | Multi-file picker; per-file progress / errors / result; uploads **sequentially**; Cancel aborts current session and stops the queue; retry failed/cancelled; Remove before start |
+| `frontend/src/App.tsx` | Route `/upload` behind `ProtectedRoute` |
+| `frontend/src/components/layout/Navbar.tsx` | **Upload** link |
+| `frontend/src/components/ui/Button.tsx` | `disabled` support |
+
+**UX notes:** multi-select replaces the previous selection; each file is its own `upload_sessions` row; success shows `file_id` + `chunk_count` and reminds that **no ACL** was assigned. Does **not** implement View files list or download (Task 5).
+
+**How to try:** stack + API up → sign in → `/upload` → select one or more allowed files → Upload.
+
 ---
 
 ## Automated proofs already run (29 August 2026)
@@ -235,8 +254,14 @@ Also: `uv run alembic upgrade head` applied `upload_sessions`; `uv sync` install
 | `.gitignore` | `backend/data/upload-staging/` |
 | `prompts/cursor_summary/7_ingest_api.md` | plan + checklist + locks |
 | `prompts/summary/5_local_ingestion_setup.md` | **this file** |
+| `frontend/src/api/client.ts` | general authenticated fetch (incl. 308-safe PUT) |
+| `frontend/src/api/uploads.ts` | **NEW** resumable upload client |
+| `frontend/src/pages/Upload.tsx` | **NEW** multi-file upload page |
+| `frontend/src/App.tsx` | `/upload` route |
+| `frontend/src/components/layout/Navbar.tsx` | Upload nav link |
+| `frontend/src/components/ui/Button.tsx` | `disabled` prop |
 
-React / OpenSearch mapping JSON / `init_services` product path: **unchanged** (except settings available to the app). `proof-*` docs left alone.
+OpenSearch mapping JSON / `init_services` product path: **unchanged** (except settings available to the app). `proof-*` docs left alone.
 
 ---
 
@@ -258,14 +283,15 @@ Spot-check MinIO: only `local/<file_id>/<safe_name>` after success — **no** `s
 
 ## What was intentionally not done
 
-- React uploader (G8)
-- `GET /files`, `GET /files/{id}/content`, `POST /search`, search UI (Task 5)
+- `GET /files`, `GET /files/{id}/content`, `POST /search`, search UI / View files list (Task 5)
 - Admin ACL assign + `update_by_query` (Task 6)
 - Background workers / async complete (C8 stays inline)
 - MinIO multipart or ranged writes
 - Mapping JWT users to `files_writer` (Task 7)
 - Session GC cron (lazy expire on access only)
 - Proof 13 chaos (force OS bulk failure)
+- Parallel multi-file PUTs (UI uploads files one after another)
+- Client resume of a prior `upload_id` across page reloads (Cancel → DELETE; new pick starts new sessions)
 
 ---
 
@@ -276,4 +302,13 @@ Spot-check MinIO: only `local/<file_id>/<safe_name>` after success — **no** `s
 | 5 Search/view | Real `file_id`s + MinIO paths; ACL grants still required for DLS hits; still **WAIT** on hybrid+DLS (OS 3.9+) |
 | 6 Admin ACL | `update_by_query` on `file_id` to fill `allowed_*` |
 | 7 Hardening | Ingest via `files_writer`; session GC cron |
-| Later UI | Drive-style client using these APIs (`bytes_received` for progress) |
+| Upload UI | **Done** — multi-file Drive-style client on `/upload` (`bytes_received` progress per file) |
+
+---
+
+## Changelog
+
+| Date | Change |
+| --- | --- |
+| 29 Aug 2026 | Ingest API + proofs (Task 4). |
+| 29 Aug 2026 | React multi-file resumable uploader (`/upload`); summary updated. |
