@@ -9,6 +9,7 @@ import { Admin } from './pages/Admin'
 import { Files } from './pages/Files'
 import { Login } from './pages/Login'
 import { Search } from './pages/Search'
+import { Upload } from './pages/Upload'
 
 function App() {
   return (
@@ -31,6 +32,14 @@ function App() {
             element={
               <ProtectedRoute>
                 <Files />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/upload"
+            element={
+              <ProtectedRoute>
+                <Upload />
               </ProtectedRoute>
             }
           />

@@ -18,6 +18,7 @@ export function Navbar() {
       </div>
       <nav className="flex items-center gap-4 text-sm text-slate-300">
         <Link to="/">Search</Link>
+        <Link to="/upload">Upload</Link>
         <Link to="/files">View files</Link>
         {isAdmin ? <Link to="/admin">Admin</Link> : null}
         {signedIn ? (
