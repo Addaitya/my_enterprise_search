@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 from app.core.config import get_settings
 from init_services import identity_sync, keycloak, minio_bucket, opensearch
 from init_services.wait import http_ok, wait_for
@@ -50,6 +52,10 @@ def main() -> None:
         opensearch.configure()
     if minio_ready:
         minio_bucket.configure()
+    if os.environ.get("SEARCH_PROOF") == "1":
+        from init_services.search_proof import run as run_search_proof
+
+        run_search_proof()
 
     print("init_services finished (missing services were skipped)")
 
