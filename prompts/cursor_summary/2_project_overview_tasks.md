@@ -292,11 +292,11 @@ Order is dependency order. Check a box only after the step has been run.
 
 ### 2. Data model (Postgres)
 
-- [ ] Tables: `users`, `roles`, `groups`, memberships (Keycloak id mirrors)
-- [ ] Table `files` (id, object_store_path, type, size, timestamps, ingestion_type, original_source)
-- [ ] Table `file_acl` (file_id, principal_type role|group, principal_id, permission viewer|owner)
-- [ ] Separate table `admin_grants` (or rely only on Keycloak `admin` role — pick one and document)
-- [ ] Alembic revision and `alembic upgrade head`
+- [x] Tables: `users`, `roles`, `groups`, memberships (Keycloak id mirrors)
+- [x] Table `files` (id, object_store_path, type, size, timestamps, ingestion_type, original_source)
+- [x] Table `file_acl` (file_id, principal_type role|group, principal_id, permission viewer|owner)
+- [x] Separate table `admin_grants` (or rely only on Keycloak `admin` role — pick one and document)
+- [x] Alembic revision and `alembic upgrade head`
 
 
 
