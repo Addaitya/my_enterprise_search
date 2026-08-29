@@ -303,6 +303,97 @@ def _ensure_user(
     print(f"[ok] user {username} roles={sorted(roles)} group={group or '(none)'}")
 
 
+PAGE_SIZE = 100
+PAGINATION_SAFETY_LIMIT = 10_000
+
+
+def _paginate(
+    admin: httpx.Client, path: str, extra_params: dict[str, Any] | None = None
+) -> list[Any]:
+    first = 0
+    items: list[Any] = []
+    while first <= PAGINATION_SAFETY_LIMIT:
+        params: dict[str, Any] = dict(extra_params or {})
+        params["first"] = first
+        params["max"] = PAGE_SIZE
+        batch = _json(admin.get(path, params=params)) or []
+        if not isinstance(batch, list):
+            raise RuntimeError(f"expected list from {path}, got {type(batch).__name__}")
+        items.extend(batch)
+        if len(batch) < PAGE_SIZE:
+            return items
+        first += PAGE_SIZE
+    raise RuntimeError(f"pagination safety stop on {path} after {first} rows")
+
+
+def list_all_realm_roles(admin: httpx.Client) -> list[dict[str, Any]]:
+    return _paginate(admin, "/roles", {"briefRepresentation": "false"})
+
+
+def list_all_groups(admin: httpx.Client) -> list[dict[str, Any]]:
+    """Flatten the realm group tree, including subgroups (C6)."""
+    seen: dict[str, dict[str, Any]] = {}
+
+    def walk(groups: list[dict[str, Any]]) -> None:
+        for group in groups:
+            group_id = group.get("id")
+            if not group_id or group_id in seen:
+                continue
+            seen[group_id] = group
+            children = _paginate(
+                admin,
+                f"/groups/{group_id}/children",
+                {"briefRepresentation": "false"},
+            )
+            walk(children)
+
+    walk(_paginate(admin, "/groups", {"briefRepresentation": "false"}))
+    return list(seen.values())
+
+
+def list_service_account_users(admin: httpx.Client) -> list[dict[str, Any]]:
+    found: list[dict[str, Any]] = []
+    for client in _paginate(admin, "/clients"):
+        if not client.get("serviceAccountsEnabled"):
+            continue
+        client_uuid = client.get("id")
+        if not client_uuid:
+            continue
+        response = admin.get(f"/clients/{client_uuid}/service-account-user")
+        if response.status_code == 404:
+            continue
+        user = _json(response)
+        if user:
+            found.append(user)
+    return found
+
+
+def list_all_users(admin: httpx.Client) -> list[dict[str, Any]]:
+    """All realm users, including disabled and service accounts (G6)."""
+    by_id: dict[str, dict[str, Any]] = {}
+    for user in _paginate(admin, "/users", {"briefRepresentation": "false"}):
+        user_id = user.get("id")
+        if user_id:
+            by_id[user_id] = user
+    for user in list_service_account_users(admin):
+        user_id = user.get("id")
+        if user_id and user_id not in by_id:
+            by_id[user_id] = user
+    return list(by_id.values())
+
+
+def list_user_realm_roles(admin: httpx.Client, user_id: str) -> list[dict[str, Any]]:
+    return _json(admin.get(f"/users/{user_id}/role-mappings/realm")) or []
+
+
+def list_user_groups(admin: httpx.Client, user_id: str) -> list[dict[str, Any]]:
+    return _paginate(
+        admin,
+        f"/users/{user_id}/groups",
+        {"briefRepresentation": "false"},
+    )
+
+
 def configure() -> None:
     """Verify realm/clients and ensure seed users. Does not re-import realm.json."""
     verify_realm()

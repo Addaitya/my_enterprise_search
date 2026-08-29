@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from app.core.config import get_settings
-from init_services import keycloak, minio_bucket, opensearch
+from init_services import identity_sync, keycloak, minio_bucket, opensearch
 from init_services.wait import http_ok, wait_for
 
 
@@ -40,12 +40,16 @@ def main() -> None:
 
     if keycloak_ready:
         keycloak.configure()
+    if postgres_ready and keycloak_ready:
+        identity_sync.sync()
+    elif not postgres_ready:
+        print("[skip] identity mirror; postgres is down")
+    else:
+        print("[skip] identity mirror; keycloak is down")
     if opensearch_ready:
         opensearch.configure()
     if minio_ready:
         minio_bucket.configure()
-    if postgres_ready:
-        print("[ok] postgres reachable; run `uv run alembic upgrade head` when models exist")
 
     print("init_services finished (missing services were skipped)")
 
