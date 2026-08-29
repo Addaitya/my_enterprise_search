@@ -1,10 +1,10 @@
 # Enterprise Search
 
-Company-internal hybrid search (keyword + semantic) over uploaded files, with role- and group-based access control. v1 is local PDF/TXT upload only.
+Company-internal hybrid search (keyword + semantic) over uploaded files, with role- and group-based access control. v1 accepts local **PDF / TXT / CSV** uploads.
 
-**Now:** Compose stack, Keycloak PKCE login, FastAPI JWT, OpenSearch `files_searcher` DLS mapping, and a Postgres identity mirror plus `files` / `file_acl` schema.
+**Now:** Compose stack, Keycloak PKCE login, FastAPI JWT, OpenSearch 3.8 JWKS + `files_searcher` DLS, Postgres identity mirror + `files` / `file_acl` / `upload_sessions`, resumable ingest API, React multi-file `/upload` UI.
 
-**Not yet:** upload, chunking, search UI, or admin CRUD.
+**Not yet:** `POST /search` / search results UI (waiting on OpenSearch hybrid+DLS; stay on 3.8), View files / Open stream, admin ACL CRUD.
 
 ## Stack
 
@@ -13,10 +13,10 @@ Company-internal hybrid search (keyword + semantic) over uploaded files, with ro
 | Backend | FastAPI, SQLAlchemy, Alembic, uv |
 | Frontend | React, Vite, Tailwind, Zustand, bun |
 | Auth | Keycloak 26.2 (`web-client` PKCE, `api-client` for the API) |
-| Search | OpenSearch 3.8.0 (ML Commons MiniLM embeddings; JWT via Keycloak JWKS) |
-| Storage | PostgreSQL 16 (identity mirror, file metadata, ACL), MinIO (bytes) |
+| Search | OpenSearch 3.8.0 (ML Commons MiniLM ONNX embeddings; JWT via Keycloak JWKS) |
+| Storage | PostgreSQL 16 (identity mirror, file metadata, ACL, upload sessions), MinIO (bytes) |
 
-Request auth stays on the **JWT**. Postgres identity is a one-way Keycloak projection. File ACL lives only in Postgres (`viewer` / `editor` on a role or group). Admin is the Keycloak realm role `admin`.
+Request auth stays on the **JWT**. Postgres identity is a one-way Keycloak projection. File ACL lives only in Postgres (`viewer` / `editor` on a role or group). Uploads index chunks with **empty** ACL — searchable only after admin grants (Task 6). Admin is the Keycloak realm role `admin`.
 
 ## Prerequisites
 
@@ -73,7 +73,9 @@ cd backend && uv run python -c "from app.main import run; run()"
 cd frontend && bun run dev
 ```
 
-`GET /health` is public. `GET /auth/me` and `/auth/admin-ping` require a Bearer token.
+Vite proxies `/api` → FastAPI. Sign in, then use **Upload** (`/upload`) for PDF/TXT/CSV (25 MiB max each).
+
+`GET /health` is public. `GET /auth/me`, `/auth/admin-ping`, and `/files/uploads*` require a Bearer token.
 
 OpenSearch verifies JWTs via Keycloak JWKS (`http://keycloak:8080/.../certs` from inside the container). Token `iss` stays `http://localhost:8080/realms/enterprise-search-realm`.
 
@@ -106,16 +108,22 @@ After a successful mirror you should see seed users plus Keycloak built-ins and 
 | `users`, `roles`, `groups`, `user_roles`, `user_groups` | Complete realm identity mirror (Keycloak UUID PKs; `users.id` = JWT `sub`) |
 | `files` | File metadata only (`object_store_path`, `file_type`, `size_bytes`, `ingestion_type`, `original_source`, timestamps). No chunks, filename, or uploader. |
 | `file_acl` | One principal per row (`user_id` **or** `role_id` **or** `group_id`). Permission `viewer` \| `editor`. v1 product grants target roles and groups; `user_id` is reserved for later connectors. |
+| `upload_sessions` | Resumable upload state (local staging path, bytes received, status). TTL 24h. |
 
 A file with no role/group grant is not searchable. There is no automatic ACL on upload.
+
+## Package docs
+
+- [backend/README.md](backend/README.md) — API, ingest, `init_services`, proofs
+- [frontend/README.md](frontend/README.md) — SPA routes, auth, upload client
 
 ## Repo layout
 
 ```
-backend/                 FastAPI app, Alembic, init_services
-frontend/                React SPA
+backend/                 FastAPI app, Alembic, init_services, ingest scripts
+frontend/                React SPA (PKCE login, /upload)
 start-dev.sh             Local API + UI (uvicorn + Vite)
 docker-compose.yml
-docker_service_configs/  Keycloak realm, OpenSearch mappings, Postgres init
+docker_service_configs/  Keycloak realm, OpenSearch mappings/pipelines/security, Postgres init
 prompts/                 Setup notes and task plan
 ```
