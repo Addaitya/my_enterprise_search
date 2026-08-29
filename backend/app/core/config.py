@@ -67,6 +67,15 @@ class Settings(BaseSettings):
     minio_bucket: str = "enterprise-search-files"
     minio_secure: bool = False
 
+    # Ingest API (Task 4). Chunk size is input tokens for splitting, not embedding dim.
+    ingest_max_upload_bytes: int = 26_214_400  # 25 MiB
+    ingest_chunk_tokens: int = 600
+    ingest_chunk_overlap_tokens: int = 75
+    ingest_upload_part_multiple: int = 262_144  # 256 KiB (Drive convention; last part exempt)
+    ingest_upload_session_ttl_hours: int = 24
+    # Local dir for resumable byte assembly; MinIO gets one full put on complete.
+    ingest_local_staging_dir: str = str(BACKEND_DIR / "data" / "upload-staging")
+
     @computed_field
     @property
     def database_url(self) -> str:

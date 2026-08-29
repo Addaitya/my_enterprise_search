@@ -12,6 +12,7 @@ backend/__pycache__/
 backend/**/__pycache__/
 backend/*.egg-info
 backend/runtime_config.json
+backend/data/upload-staging/
 *.pyc
 .python-version
 
