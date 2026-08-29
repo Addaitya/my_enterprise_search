@@ -48,8 +48,15 @@ cd backend && uv sync && uv run python -m init_services
 4. API (http://localhost:8000) and UI (http://localhost:5173):
 
 ```bash
-cd backend && uv run enterprise-search-api
-cd frontend && bun install && bun run dev
+cd frontend && bun install
+./start-dev.sh
+```
+
+Ctrl+C stops both. To run them separately:
+
+```bash
+cd backend && uv run python -c "from app.main import run; run()"
+cd frontend && bun run dev
 ```
 
 `GET /health` is public. `GET /auth/me` and `/auth/admin-ping` require a Bearer token.
@@ -68,6 +75,7 @@ SPA client: `web-client`. API and OpenSearch audience: `api-client`.
 ```
 backend/                 FastAPI app, Alembic, init_services
 frontend/                React SPA
+start-dev.sh             Local API + UI (uvicorn + Vite)
 docker-compose.yml
 docker_service_configs/  Keycloak realm, OpenSearch mappings, Postgres init
 prompts/                 Setup notes and task plan
