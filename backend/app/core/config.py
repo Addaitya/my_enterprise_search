@@ -61,6 +61,17 @@ class Settings(BaseSettings):
     # Overlay from runtime_config.json via get_settings(); not an env secret.
     opensearch_model_id: str | None = None
 
+    # Product search (Task 5). client_hybrid = match∥neural + merge (3.8 workaround).
+    search_keyword_weight: float = 0.3
+    search_neural_weight: float = 0.7
+    search_fetch_multiplier: int = 5
+    search_max_fetch: int = 100
+    search_default_size: int = 10
+    search_max_size: int = 50
+    search_snippet_chars: int = 400
+    search_mode: str = "client_hybrid"  # or native_hybrid after 3.9 proofs
+    search_neural_k: int = 50
+
     minio_endpoint: str = "localhost:9000"
     minio_root_user: str = "minioadmin"
     minio_root_password: str = ""
