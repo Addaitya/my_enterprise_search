@@ -6,7 +6,9 @@ one complete object at ``local/{file_id}/{safe_name}`` on successful complete.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from io import BytesIO
+from typing import Any
 
 from minio import Minio
 from minio.error import S3Error
@@ -56,3 +58,32 @@ class MinioStore:
             return True
         except S3Error:
             return False
+
+    def get_object_bytes(self, object_store_path: str) -> bytes:
+        """Read full object into memory (small files / proofs)."""
+        response: Any = None
+        try:
+            response = self.client.get_object(self.bucket, object_store_path)
+            return response.read()
+        finally:
+            if response is not None:
+                response.close()
+                response.release_conn()
+
+    def iter_object(
+        self,
+        object_store_path: str,
+        *,
+        chunk_size: int = 1024 * 64,
+    ) -> Iterator[bytes]:
+        """Stream object bytes. Closes the MinIO response when the iterator ends."""
+        response = self.client.get_object(self.bucket, object_store_path)
+        try:
+            while True:
+                chunk = response.read(chunk_size)
+                if not chunk:
+                    break
+                yield chunk
+        finally:
+            response.close()
+            response.release_conn()

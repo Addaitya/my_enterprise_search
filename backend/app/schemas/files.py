@@ -47,3 +47,25 @@ class CompleteUploadResponse(BaseModel):
     original_source: str | None
     chunk_count: int
     uploaded_at: datetime
+
+
+class FileListItem(BaseModel):
+    id: UUID
+    display_name: str
+    file_type: str
+    size_bytes: int
+    ingestion_type: str
+    object_store_path: str
+    uploaded_at: datetime
+    updated_at: datetime
+
+
+class FileDetail(FileListItem):
+    """Single-file metadata (same fields as list item for v1)."""
+
+
+class FileListResponse(BaseModel):
+    items: list[FileListItem]
+    total: int
+    limit: int
+    offset: int
