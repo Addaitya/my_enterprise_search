@@ -180,7 +180,7 @@ GET /enterprise-search-chunks/_search?search_pipeline=enterprise-search-hybrid
 1. **JWT hybrid + DLS blocked on 3.8 (Landmine 13).**  
    DLS wraps the top-level `hybrid` query; 3.8 throws `BooleanQuery cannot be cast to HybridQuery`. Keyword and neural-only DLS **pass**. Upstream fix: security PR [#6416](https://github.com/opensearch-project/security/pull/6416) on OpenSearch **3.9+**.
 
-2. **Human lock 29 Aug 2026:** stay on **3.8**; keep hybrid as product contract; interim match/neural DLS proofs only; **Task 5 `POST /search` waits** until hybrid+DLS works (3.9+) or a later override. Do **not** ship keyword-only or admin search as a workaround.
+2. **Human lock 29 Aug 2026 (updated):** stay on **3.8**; keep hybrid as product contract. Platform `search_proof` native hybrid stays **BLOCKED**. Product Task 5 `POST /search` is **unblocked** via **client-side hybrid** (match ∥ neural + merge) — see `prompts/cursor_summary/hybrid_search_issue_sol.md`. Do **not** ship keyword-only or admin search.
 
 3. **Extra `[]` on `${attr.jwt.groups}`** on 3.8 jwt+JWKS → `[["_empty"]]` and DLS 500s. Bare `${attr.jwt.groups}`; keep `[${user.roles}]`.
 
@@ -261,7 +261,7 @@ curl -sS http://localhost:8000/health
 ## What was intentionally not done
 
 - Upload, PDF/TXT parse, chunker, MinIO put (Task 4).
-- `POST /search`, strip `embedding` in API response, results UI, Open/download (Task 5 — **WAIT** until hybrid+DLS on 3.9+ or override).
+- `POST /search`, strip `embedding` in API response, results UI, Open/download (Task 5 — product path = **client hybrid** on 3.8; see `hybrid_search_issue_sol.md` / summary 6 when shipped).
 - Writing `files` / `file_acl` or `update_by_query` from Postgres (Task 6).
 - Mapping JWT users to `files_writer` or `ml_full_access`.
 - Switching cluster to dedicated ML nodes.
@@ -275,9 +275,10 @@ curl -sS http://localhost:8000/health
 | Task | Needs from this platform |
 | --- | --- |
 | 4 Ingest | Index + default ingest pipeline; bulk index omit `embedding`; ACL **names** on each chunk; basic admin writes |
-| 5 Search/view API | Forward **user** JWT; same hybrid body; `_source` exclude `embedding`; DLS in OS — **WAIT** (stay on 3.8) |
+| 5 Search/view API | Forward **user** JWT; **client-side hybrid** on 3.8 (match ∥ neural + merge); `_source` exclude `embedding`; DLS in OS — see `hybrid_search_issue_sol.md` |
 | 6 Admin ACL | `update_by_query` on `file_id`; same keyword ACL fields |
 | 7 Hardening | Map ingest to `files_writer` instead of `all_access` |
 | OpenSearch 3.9+ | Re-run `search_proof.py` hybrid path after Hub publishes `3.9.0` (security PR 6416) |
 
 Plan source of truth for this slice: `prompts/cursor_summary/6_search_setup.md`.
+Product Search on 3.8 (client hybrid): see `prompts/summary/6_search_view.md` and `prompts/cursor_summary/hybrid_search_issue_sol.md`.
