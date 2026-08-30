@@ -224,7 +224,7 @@ Also: `uv run alembic upgrade head` applied `upload_sessions`; `uv sync` install
 9. **v1 sequential ranges only** (`start == bytes_received`); gaps → 400.
 10. **No new OS mapping fields.**
 11. **C6 compensation** — no orphan `files` / searchable chunks without `files`.
-12. **Does not wait on hybrid+DLS** (Task 5 still blocked on OS 3.8 Landmine 13).
+12. **Does not wait on Search** — ingest is independent; Search unblocked via client hybrid (`hybrid_search_issue_sol.md`).
 13. **600/75 kept** despite MiniLM ~512 input truncate risk — monitor; do not silently lower.
 14. **Session ownership** — `user_id == JWT sub`; admin does not hijack.
 15. **Final path includes `file_id`**; local staging uses `upload_id`.
@@ -299,7 +299,7 @@ Spot-check MinIO: only `local/<file_id>/<safe_name>` after success — **no** `s
 
 | Task | Needs from this ingest slice |
 | --- | --- |
-| 5 Search/view | Real `file_id`s + MinIO paths; ACL grants still required for DLS hits; still **WAIT** on hybrid+DLS (OS 3.9+) |
+| 5 Search/view | Real `file_id`s + MinIO paths; ACL grants still required for DLS hits; Search unblocked via **client hybrid** (`hybrid_search_issue_sol.md`) |
 | 6 Admin ACL | `update_by_query` on `file_id` to fill `allowed_*` |
 | 7 Hardening | Ingest via `files_writer`; session GC cron |
 | Upload UI | **Done** — multi-file Drive-style client on `/upload` (`bytes_received` progress per file) |

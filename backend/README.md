@@ -1,6 +1,6 @@
 # Backend
 
-FastAPI service for Enterprise Search: JWT auth against Keycloak, Postgres identity/files metadata, resumable local ingest into MinIO + OpenSearch, and bootstrap via `init_services`.
+FastAPI service for Enterprise Search: JWT auth against Keycloak, Postgres identity/files metadata + ACL, resumable local ingest into MinIO + OpenSearch, **client-hybrid search**, file list/open streams, and bootstrap via `init_services`.
 
 Managed with [uv](https://docs.astral.sh/uv/). Python **3.12+**.
 
@@ -8,14 +8,14 @@ Managed with [uv](https://docs.astral.sh/uv/). Python **3.12+**.
 
 ```
 app/
-  api/routes/     health, auth, files (upload)
+  api/routes/     health, auth, files (list/open + upload), search
   core/           settings, JWT verification
   models/         identity, files, file_acl, upload_sessions
-  services/       upload orchestrator, staging, MinIO, OpenSearch bulk, ingest/*
-  schemas/        request/response models
+  services/       file_access, opensearch_search, upload, staging, MinIO, OpenSearch bulk, ingest/*
+  schemas/        request/response models (files, search, uploads)
 alembic/          migrations (run manually; not part of init_services)
 init_services/    Keycloak, identity mirror, OpenSearch security/ML/index, MinIO bucket
-scripts/          ingest_unit_checks, ingest_proof
+scripts/          ingest_*, search_unit_checks, search_view_proof, seed_file_acl_for_proofs
 ```
 
 ## Setup
@@ -45,6 +45,10 @@ OpenAPI: http://localhost:8000/docs
 | `GET` | `/health` | public | Liveness |
 | `GET` | `/auth/me` | Bearer | Current user claims |
 | `GET` | `/auth/admin-ping` | Bearer + `admin` | Admin check |
+| `POST` | `/search` | `search-user` \| `admin` | Client-hybrid search (user JWT → OpenSearch DLS) |
+| `GET` | `/files` | `search-user` \| `admin` | ACL-filtered file list (Postgres `file_acl`) |
+| `GET` | `/files/{id}` | product user + ACL | File metadata |
+| `GET` | `/files/{id}/content` | product user + ACL | Stream original from MinIO |
 | `POST` | `/files/uploads` | `search-user` \| `admin` | Initiate resumable upload (201) |
 | `PUT` | `/files/uploads/{id}` | owner (`sub`) | `Content-Range` byte parts; incomplete → 308 |
 | `GET` | `/files/uploads/{id}` | owner | Status / progress |
@@ -52,6 +56,25 @@ OpenAPI: http://localhost:8000/docs
 | `DELETE` | `/files/uploads/{id}` | owner | Cancel; drop local staging |
 
 Vite proxies `/api/*` to these paths (no `/api` prefix on FastAPI itself).
+
+### Search (`POST /search`)
+
+Body: `{ "q": "<string>", "size": 10 }` (`size` clamped 1..50; empty/`whitespace` `q` → **400**).
+
+Default `search_mode=client_hybrid` (OpenSearch **3.8** workaround):
+
+1. Forward the **caller JWT** (never basic `admin`).
+2. Run match on `content` and neural on `embedding` in parallel (`k=50`).
+3. Merge with min_max + arithmetic_mean weights `[0.3, 0.7]` in FastAPI.
+4. Strip `embedding` from `_source` and the response DTO.
+
+Hits are **chunk-grain** (snippet, `file_id`, `chunk_seq`, score, `display_name` = basename of `object_store_path`). OS failures → **502**; missing `opensearch_model_id` → **503**. Native `hybrid` + `search_pipeline` only when `search_mode=native_hybrid` after 3.9 proofs.
+
+### View files / Open
+
+- List/metadata/content use Postgres `file_acl` matched on JWT **role/group names** (`viewer` \| `editor`; ignore `_empty`). Realm `admin` does **not** bypass ACL.
+- Content streams `files.object_store_path` from MinIO only after ACL pass (**403** deny, **404** missing). No client-supplied object keys.
+- Uploads start with **empty** ACL — list/search stay empty until grants (seed script or Task 6).
 
 ### Ingest rules
 
@@ -79,14 +102,19 @@ SEARCH_PROOF=1 uv run python -m init_services
 uv run python -m init_services.search_proof
 ```
 
-On OpenSearch **3.8**, hybrid+DLS is blocked (Landmine 13); proofs fall back to match/neural DLS while keeping hybrid as the product contract.
+On OpenSearch **3.8**, hybrid+DLS is blocked (Landmine 13); platform proofs fall back to match/neural DLS. Product search uses client-hybrid instead.
 
 ## Proofs / checks
 
 ```bash
-uv run python -m scripts.ingest_unit_checks   # offline chunker/CSV
-uv run python -m scripts.ingest_proof         # live JWT upload → PG/MinIO/OS
+uv run python -m scripts.ingest_unit_checks      # offline chunker/CSV
+uv run python -m scripts.ingest_proof            # live JWT upload → PG/MinIO/OS
+uv run python -m scripts.search_unit_checks      # offline merge / DTO strip
+uv run python -m scripts.seed_file_acl_for_proofs  # optional G3 ACL + OS allowed_*
+uv run python -m scripts.search_view_proof       # list/open + client-hybrid DLS
 ```
+
+`seed_file_acl_for_proofs` grants role `search-user` on file A and group `engineering` on file B (idempotent; never `_empty`), then `update_by_query` copies names into chunk `allowed_*`.
 
 ## Notes
 

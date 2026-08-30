@@ -379,11 +379,11 @@ Plan: `prompts/cursor_summary/6_search_setup.md`. Cluster + proofs only — **no
 
 ### 5. Search and view API + UI
 
-- [ ] `POST /search` proxies hybrid query with **user** JWT to OpenSearch
-- [ ] Strip `embedding` from `_source` in the response
-- [ ] Results UI + Open button
-- [ ] `GET /files/{id}` / stream: Postgres ACL (or user-JWT GET) then MinIO
-- [ ] Navbar View files list (ACL-filtered from Postgres)
+- [x] `POST /search` proxies **client-side hybrid** (match + neural + merge) with **user** JWT on 3.8; native hybrid after 3.9 (`hybrid_search_issue_sol.md`)
+- [x] Strip `embedding` from `_source` in the response
+- [x] Results UI with Open (authenticated blob download via `GET /files/{id}/content`)
+- [x] `GET /files/{id}` / stream: Postgres ACL then MinIO
+- [x] Navbar View files list (ACL-filtered from Postgres)
 
 
 

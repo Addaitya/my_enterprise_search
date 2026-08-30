@@ -2,9 +2,9 @@
 
 Company-internal hybrid search (keyword + semantic) over uploaded files, with role- and group-based access control. v1 accepts local **PDF / TXT / CSV** uploads.
 
-**Now:** Compose stack, Keycloak PKCE login, FastAPI JWT, OpenSearch 3.8 JWKS + `files_searcher` DLS, Postgres identity mirror + `files` / `file_acl` / `upload_sessions`, resumable ingest API, React multi-file `/upload` UI.
+**Now:** Compose stack, Keycloak PKCE login, FastAPI JWT, OpenSearch 3.8 JWKS + `files_searcher` DLS, Postgres identity mirror + `files` / `file_acl` / `upload_sessions`, resumable ingest API, React multi-file `/upload`, **client-hybrid `POST /search`**, ACL-filtered **View files** + **Open** (MinIO stream).
 
-**Not yet:** `POST /search` / search results UI (waiting on OpenSearch hybrid+DLS; stay on 3.8), View files / Open stream, admin ACL CRUD.
+**Not yet:** Admin ACL CRUD / dual-write progress UI (Task 6), native OpenSearch `hybrid`+DLS (needs 3.9+; product path uses client-side merge on 3.8).
 
 ## Stack
 
@@ -16,7 +16,19 @@ Company-internal hybrid search (keyword + semantic) over uploaded files, with ro
 | Search | OpenSearch 3.8.0 (ML Commons MiniLM ONNX embeddings; JWT via Keycloak JWKS) |
 | Storage | PostgreSQL 16 (identity mirror, file metadata, ACL, upload sessions), MinIO (bytes) |
 
-Request auth stays on the **JWT**. Postgres identity is a one-way Keycloak projection. File ACL lives only in Postgres (`viewer` / `editor` on a role or group). Uploads index chunks with **empty** ACL — searchable only after admin grants (Task 6). Admin is the Keycloak realm role `admin`.
+Request auth stays on the **JWT**. Postgres identity is a one-way Keycloak projection. File ACL lives only in Postgres (`viewer` / `editor` on a role or group). Uploads index chunks with **empty** ACL — searchable / listable only after grants (proof seed or Task 6). Admin is the Keycloak realm role `admin` (does **not** bypass file ACL).
+
+### Search on OpenSearch 3.8
+
+Native `hybrid` + DLS hits a ClassCast bug on 3.8. Product `POST /search` runs **client-side hybrid**: parallel match + neural queries with the **user JWT**, then FastAPI min_max + weights `[0.3, 0.7]`. OpenSearch DLS still applies on each subquery. Native hybrid stays off the hot path until 3.9 proofs.
+
+### Access control split
+
+| Concern | Source of truth |
+| --- | --- |
+| Search hits | OpenSearch DLS on chunk `allowed_roles` / `allowed_groups` |
+| View files / Open download | Postgres `file_acl` (JWT role/group **names**; `editor` ⇒ view) |
+| File bytes | MinIO path from `files.object_store_path` only (never a client-supplied key) |
 
 ## Prerequisites
 
@@ -73,9 +85,13 @@ cd backend && uv run python -c "from app.main import run; run()"
 cd frontend && bun run dev
 ```
 
-Vite proxies `/api` → FastAPI. Sign in, then use **Upload** (`/upload`) for PDF/TXT/CSV (25 MiB max each).
+Vite proxies `/api` → FastAPI. Sign in, then:
 
-`GET /health` is public. `GET /auth/me`, `/auth/admin-ping`, and `/files/uploads*` require a Bearer token.
+- **Upload** (`/upload`) — PDF/TXT/CSV (25 MiB max each)
+- **Search** (`/`) — hybrid search + Open download
+- **View files** (`/files`) — ACL-filtered list + Open
+
+`GET /health` is public. Product routes (`/auth/me`, `/search`, `/files*`, `/files/uploads*`) require a Bearer token.
 
 OpenSearch verifies JWTs via Keycloak JWKS (`http://keycloak:8080/.../certs` from inside the container). Token `iss` stays `http://localhost:8080/realms/enterprise-search-realm`.
 
@@ -101,6 +117,18 @@ SPA client: `web-client`. API and OpenSearch audience: `api-client`.
 
 After a successful mirror you should see seed users plus Keycloak built-ins and the `api-client` service account (typically users=3, roles=5, groups=`engineering` + `_empty`).
 
+### Optional: ACL seed for list / search proofs
+
+Uploads have **no** `file_acl` until Task 6. For local demos, seed one/two recent files:
+
+```bash
+cd backend
+uv run python -m scripts.seed_file_acl_for_proofs
+uv run python -m scripts.search_view_proof
+```
+
+File A gets role `search-user` viewer; file B gets group `engineering` viewer (and matching OpenSearch `allowed_*`). Never grants `_empty`.
+
 ## Postgres (`app`)
 
 | Tables | Purpose |
@@ -110,18 +138,18 @@ After a successful mirror you should see seed users plus Keycloak built-ins and 
 | `file_acl` | One principal per row (`user_id` **or** `role_id` **or** `group_id`). Permission `viewer` \| `editor`. v1 product grants target roles and groups; `user_id` is reserved for later connectors. |
 | `upload_sessions` | Resumable upload state (local staging path, bytes received, status). TTL 24h. |
 
-A file with no role/group grant is not searchable. There is no automatic ACL on upload.
+A file with no role/group grant is not searchable or listable. There is no automatic ACL on upload.
 
 ## Package docs
 
-- [backend/README.md](backend/README.md) — API, ingest, `init_services`, proofs
-- [frontend/README.md](frontend/README.md) — SPA routes, auth, upload client
+- [backend/README.md](backend/README.md) — API, ingest, search, `init_services`, proofs
+- [frontend/README.md](frontend/README.md) — SPA routes, auth, search/files/upload clients
 
 ## Repo layout
 
 ```
-backend/                 FastAPI app, Alembic, init_services, ingest scripts
-frontend/                React SPA (PKCE login, /upload)
+backend/                 FastAPI app, Alembic, init_services, ingest + search scripts
+frontend/                React SPA (PKCE login, search, upload, files)
 start-dev.sh             Local API + UI (uvicorn + Vite)
 docker-compose.yml
 docker_service_configs/  Keycloak realm, OpenSearch mappings/pipelines/security, Postgres init
