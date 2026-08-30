@@ -44,6 +44,18 @@ sudo sysctl -w vm.max_map_count=262144
 
 ## Setup
 
+Primary path — one command from the repo root ([setup/README.md](setup/README.md)):
+
+```bash
+./setup/setup.sh
+# optional ACL seed + start API/UI:
+./setup/setup.sh --with-seed --start
+```
+
+This checks prereqs, copies env samples if missing, brings Compose up, waits for services, runs Alembic + `init_services`, installs frontend deps, and prints URLs / seed users. Re-runs are idempotent; existing `.env` files are not overwritten unless `--force-env`.
+
+### Manual fallback
+
 1. Copy env samples. Values are local demo defaults; do not commit real `.env` files.
 
 ```bash
@@ -105,7 +117,6 @@ docker volume rm my_enterprise_search_opensearch_data
 docker compose up -d opensearch opensearch-dashboard
 cd backend && uv run python -m init_services
 ```
-
 ## Seed users (local)
 
 | User | Password | Access |
@@ -150,6 +161,7 @@ A file with no role/group grant is not searchable or listable. There is no autom
 ```
 backend/                 FastAPI app, Alembic, init_services, ingest + search scripts
 frontend/                React SPA (PKCE login, search, upload, files)
+setup/                   One-command local bootstrap (./setup/setup.sh)
 start-dev.sh             Local API + UI (uvicorn + Vite)
 docker-compose.yml
 docker_service_configs/  Keycloak realm, OpenSearch mappings/pipelines/security, Postgres init

@@ -20,7 +20,9 @@ scripts/          ingest_*, search_unit_checks, search_view_proof, seed_file_acl
 
 ## Setup
 
-From the **repo root**, env lives in `.env` (Compose + FastAPI):
+Preferred: from the **repo root**, run `./setup/setup.sh` (see [setup/README.md](../setup/README.md)).
+
+Manual path — env lives in root `.env` (Compose + FastAPI):
 
 ```bash
 cp backend/.env.sample .env

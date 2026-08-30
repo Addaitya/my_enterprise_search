@@ -6,6 +6,10 @@ Stack: **React 19**, **Vite 8**, **TypeScript**, **Tailwind 4**, **Zustand**, **
 
 ## Setup
 
+Preferred: from the **repo root**, run `./setup/setup.sh` (installs frontend deps too). See [setup/README.md](../setup/README.md).
+
+Manual:
+
 ```bash
 cp .env.sample .env
 bun install
