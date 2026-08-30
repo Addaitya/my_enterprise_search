@@ -389,10 +389,12 @@ Plan: `prompts/cursor_summary/6_search_setup.md`. Cluster + proofs only — **no
 
 ### 6. Admin
 
-- [ ] Create/update users, roles, groups → Keycloak Admin API + Postgres
-- [ ] Assign file privileges to roles/groups
-- [ ] Background job: `update_by_query` (or per-chunk updates) + progress API/UI
-- [ ] Keep Postgres and OpenSearch ACL in sync; define retry/repair
+Plans: `prompts/cursor_summary/9_admin_panel.md` (index) → **6a** `9a_admin_panel.md` (identity) then **6b** `9b_admin_panel.md` (file ACL + sync). Flip all boxes only when both phases are done.
+
+- [x] Create/update users, roles, groups → Keycloak Admin API + Postgres *(6a — see `prompts/summary/8a_admin_panel.md`; React Proof 10 human)*
+- [x] Assign file privileges to roles/groups *(6b — see `prompts/summary/8b_admin_panel.md`; React Proof 10 human)*
+- [x] Background job: `update_by_query` (or per-chunk updates) + progress API/UI *(6b)*
+- [x] Keep Postgres and OpenSearch ACL in sync; define retry/repair *(6b retry via `/admin/acl-jobs/{id}/retry`; deeper repair → Task 7)*
 
 
 
