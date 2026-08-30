@@ -1,4 +1,4 @@
-import { ApiError, apiPostJson } from './client'
+import { apiPostJson } from './client'
 
 export type SearchHit = {
   file_id: string | null

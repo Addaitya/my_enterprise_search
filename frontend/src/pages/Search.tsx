@@ -1,4 +1,4 @@
-import { FormEvent, useState } from 'react'
+import { useState, type SubmitEvent } from 'react'
 
 import { ApiError } from '../api/client'
 import { downloadFileContent } from '../api/files'
@@ -23,7 +23,7 @@ export function Search() {
   const [result, setResult] = useState<SearchResponse | null>(null)
   const [openingId, setOpeningId] = useState<string | null>(null)
 
-  async function onSubmit(event: FormEvent) {
+  async function onSubmit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault()
     const q = query.trim()
     if (!q) {
