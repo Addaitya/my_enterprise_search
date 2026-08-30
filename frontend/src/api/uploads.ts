@@ -1,4 +1,6 @@
-import { ApiError, apiDelete, apiFetch, apiGet, apiPostJson, detailFromBody } from './client'
+import { config } from '../config/env'
+import { useAuthStore } from '../store/authStore'
+import { ApiError, apiDelete, apiGet, apiPostJson, detailFromBody } from './client'
 
 /** Drive convention: non-final parts are multiples of 256 KiB. */
 export const UPLOAD_PART_SIZE = 256 * 1024
@@ -116,9 +118,56 @@ export async function cancelUpload(uploadId: string): Promise<void> {
 }
 
 /**
- * PUT one byte range. Uses `redirect: 'manual'` so Drive-style HTTP 308
- * (Resume Incomplete) is returned to the caller instead of being followed.
+ * PUT one byte range via XHR.
+ *
+ * Fetch + `redirect: 'manual'` turns Drive-style HTTP 308 (Resume Incomplete)
+ * into an opaque redirect (status 0, no body). XHR exposes 308 normally.
  */
+function xhrPutUploadRange(
+  uploadId: string,
+  start: number,
+  end: number,
+  total: number,
+  chunk: Blob,
+): Promise<{ status: number; bytesReceived: number }> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest()
+    xhr.open('PUT', `${config.apiBaseUrl}/files/uploads/${uploadId}`)
+    xhr.setRequestHeader('Content-Range', `bytes ${start}-${end}/${total}`)
+    xhr.setRequestHeader('Content-Type', 'application/octet-stream')
+    const token = useAuthStore.getState().accessToken
+    if (token) {
+      xhr.setRequestHeader('Authorization', `Bearer ${token}`)
+    }
+
+    xhr.onload = () => {
+      const text = xhr.responseText
+      if (xhr.status !== 200 && xhr.status !== 308) {
+        reject(new ApiError(xhr.status, detailFromBody(text)))
+        return
+      }
+
+      let bytesReceived = end + 1
+      try {
+        const parsed = JSON.parse(text) as { bytes_received?: number }
+        if (typeof parsed.bytes_received === 'number') {
+          bytesReceived = parsed.bytes_received
+        }
+      } catch {
+        // keep end+1 fallback
+      }
+
+      resolve({ status: xhr.status, bytesReceived })
+    }
+
+    xhr.onerror = () => {
+      reject(new ApiError(0, 'Network error during upload'))
+    }
+
+    xhr.send(chunk)
+  })
+}
+
 async function putUploadRange(
   uploadId: string,
   start: number,
@@ -126,37 +175,16 @@ async function putUploadRange(
   total: number,
   chunk: Blob,
 ): Promise<{ status: number; bytesReceived: number }> {
-  const response = await apiFetch(`/files/uploads/${uploadId}`, {
-    method: 'PUT',
-    redirect: 'manual',
-    headers: {
-      'Content-Range': `bytes ${start}-${end}/${total}`,
-      'Content-Type': 'application/octet-stream',
-    },
-    body: chunk,
-  })
-
-  // opaqueredirect should not happen via Vite same-origin /api proxy
-  if (response.type === 'opaqueredirect') {
-    throw new ApiError(308, 'Unexpected opaque redirect during upload')
-  }
-
-  const text = await response.text()
-  if (response.status !== 200 && response.status !== 308) {
-    throw new ApiError(response.status, detailFromBody(text))
-  }
-
-  let bytesReceived = end + 1
   try {
-    const parsed = JSON.parse(text) as { bytes_received?: number }
-    if (typeof parsed.bytes_received === 'number') {
-      bytesReceived = parsed.bytes_received
+    return await xhrPutUploadRange(uploadId, start, end, total, chunk)
+  } catch (err) {
+    // One silent-refresh path via existing apiGet, then retry the part once.
+    if (err instanceof ApiError && err.status === 401) {
+      await getUploadStatus(uploadId)
+      return xhrPutUploadRange(uploadId, start, end, total, chunk)
     }
-  } catch {
-    // keep end+1 fallback
+    throw err
   }
-
-  return { status: response.status, bytesReceived }
 }
 
 export type ResumableUploadOptions = {

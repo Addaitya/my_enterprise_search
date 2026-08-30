@@ -18,8 +18,6 @@ type ApiFetchOptions = {
   headers?: HeadersInit
   body?: BodyInit | null
   json?: unknown
-  /** Default `follow`. Use `manual` for Drive-style 308 resume responses. */
-  redirect?: RequestRedirect
 }
 
 function detailFromBody(text: string): string {
@@ -77,7 +75,6 @@ export async function apiFetch(
     method: options.method ?? 'GET',
     headers,
     body,
-    redirect: options.redirect ?? 'follow',
   })
 
   if (response.status === 401 && path !== '/health' && !retried) {
