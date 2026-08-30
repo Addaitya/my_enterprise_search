@@ -107,6 +107,28 @@ export async function apiPostJson<T>(path: string, json: unknown): Promise<T> {
   return (await response.json()) as T
 }
 
+export async function apiPutJson<T>(path: string, json: unknown): Promise<T> {
+  const response = await apiFetch(path, { method: 'PUT', json })
+  if (!response.ok) {
+    throw new ApiError(response.status, detailFromBody(await response.text()))
+  }
+  if (response.status === 204) {
+    return undefined as T
+  }
+  return (await response.json()) as T
+}
+
+export async function apiPatchJson<T>(path: string, json: unknown): Promise<T> {
+  const response = await apiFetch(path, { method: 'PATCH', json })
+  if (!response.ok) {
+    throw new ApiError(response.status, detailFromBody(await response.text()))
+  }
+  if (response.status === 204) {
+    return undefined as T
+  }
+  return (await response.json()) as T
+}
+
 export async function apiDelete(path: string): Promise<void> {
   const response = await apiFetch(path, { method: 'DELETE' })
   if (!response.ok && response.status !== 204) {
