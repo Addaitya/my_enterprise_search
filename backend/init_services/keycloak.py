@@ -394,6 +394,76 @@ def list_user_groups(admin: httpx.Client, user_id: str) -> list[dict[str, Any]]:
     )
 
 
+# Client roles on realm-management required for product Admin API (api-client
+# service account via client_credentials). manage-realm covers realm role CRUD.
+_API_CLIENT_ADMIN_ROLES = (
+    "manage-users",
+    "view-users",
+    "query-users",
+    "query-groups",
+    "manage-realm",
+    "view-realm",
+)
+
+
+def _ensure_api_client_service_account_roles(
+    admin: httpx.Client, clients: dict[str, dict[str, Any]]
+) -> None:
+    """Grant realm-management roles so api-client can dual-write identity."""
+    settings = get_settings()
+    api_client = clients["api-client"]
+    client_uuid = api_client["id"]
+    sa = _json(admin.get(f"/clients/{client_uuid}/service-account-user"))
+    if not sa or not sa.get("id"):
+        raise RuntimeError("api-client service-account user missing")
+    sa_id = sa["id"]
+
+    rm_clients = _json(admin.get("/clients", params={"clientId": "realm-management"})) or []
+    if not rm_clients:
+        raise RuntimeError("realm-management client not found")
+    rm_id = rm_clients[0]["id"]
+
+    available = {
+        role["name"]: role
+        for role in (_json(admin.get(f"/users/{sa_id}/role-mappings/clients/{rm_id}/available")) or [])
+    }
+    # Also pull already-assigned so we can skip quietly.
+    assigned = {
+        role["name"]: role
+        for role in (_json(admin.get(f"/users/{sa_id}/role-mappings/clients/{rm_id}")) or [])
+    }
+    to_add: list[dict[str, Any]] = []
+    for name in _API_CLIENT_ADMIN_ROLES:
+        if name in assigned:
+            continue
+        role = available.get(name)
+        if role is None:
+            # Fall back to full client role list
+            all_roles = _json(admin.get(f"/clients/{rm_id}/roles")) or []
+            role = next((r for r in all_roles if r.get("name") == name), None)
+        if role is None:
+            raise RuntimeError(f"realm-management role {name} not found")
+        to_add.append(role)
+    if to_add:
+        response = admin.post(
+            f"/users/{sa_id}/role-mappings/clients/{rm_id}",
+            json=to_add,
+        )
+        if response.is_error:
+            raise RuntimeError(
+                f"assign api-client service-account roles {response.status_code}: {response.text}"
+            )
+        print(
+            f"[ok] api-client service account granted realm-management roles: "
+            f"{sorted(r['name'] for r in to_add)}"
+        )
+    else:
+        print(
+            f"[ok] api-client service account already has Admin API roles "
+            f"({settings.keycloak_client_id})"
+        )
+
+
 def configure() -> None:
     """Verify realm/clients and ensure seed users. Does not re-import realm.json."""
     verify_realm()
@@ -402,6 +472,7 @@ def configure() -> None:
         clients = _get_clients(admin)
         _ensure_basic_scope(admin, clients)
         _ensure_groups_claim(admin, clients)
+        _ensure_api_client_service_account_roles(admin, clients)
         _ensure_user(
             admin,
             username=REALM_ADMIN_USERNAME,
