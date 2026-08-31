@@ -1,4 +1,4 @@
-import { apiDelete, apiGet, apiPatchJson, apiPostJson, apiPutJson } from './client'
+import { apiDelete, apiDeleteJson, apiGet, apiPatchJson, apiPostJson, apiPutJson } from './client'
 
 export type AdminUser = {
   id: string
@@ -63,6 +63,13 @@ export type UserUpdateBody = {
   group_names?: string[]
 }
 
+export type AccessPreview = {
+  principal_type: 'role' | 'group'
+  principal_id: string
+  principal_name: string
+  permission: string
+}
+
 export type AdminFile = {
   id: string
   display_name: string
@@ -71,6 +78,8 @@ export type AdminFile = {
   object_store_path: string
   uploaded_at: string
   updated_at: string
+  access_total?: number
+  access_preview?: AccessPreview[]
 }
 
 export type AdminFileList = {
@@ -78,6 +87,13 @@ export type AdminFileList = {
   total: number
   limit: number
   offset: number
+}
+
+export type ListAdminFilesParams = {
+  limit?: number
+  offset?: number
+  q?: string
+  has_acl?: boolean | null
 }
 
 export type AclGrant = {
@@ -98,6 +114,47 @@ export type FileAclResponse = {
   file_id: string
   grants: AclGrant[]
   acl_job_id: string | null
+}
+
+export type BulkAclMode = 'upsert' | 'replace' | 'revoke'
+
+export type BulkAclRequest = {
+  file_ids: string[]
+  mode: BulkAclMode
+  grants: AclGrantInput[]
+  confirm_replace?: boolean
+}
+
+export type BulkAclResult = {
+  file_id: string
+  grants: AclGrant[]
+  acl_job_id: string | null
+}
+
+export type BulkAclFailed = {
+  file_id: string
+  error: string
+}
+
+export type BulkAclResponse = {
+  results: BulkAclResult[]
+  failed: BulkAclFailed[]
+}
+
+export type FileGrantItem = {
+  acl_id: string
+  file_id: string
+  display_name: string
+  file_type: string
+  permission: string
+  updated_at: string
+}
+
+export type FileGrantList = {
+  items: FileGrantItem[]
+  total: number
+  limit: number
+  offset: number
 }
 
 export type AclJob = {
@@ -156,9 +213,76 @@ export async function deleteGroup(id: string): Promise<void> {
   return apiDelete(`/admin/groups/${id}`)
 }
 
-export async function listAdminFiles(limit = 100, offset = 0): Promise<AdminFileList> {
+export type MembersMutationResponse = {
+  results: AdminUser[]
+  failed: { user_id: string; error: string }[]
+}
+
+export async function listRoleMembers(
+  roleId: string,
+  limit = 50,
+  offset = 0,
+  q?: string,
+): Promise<AdminUserList> {
   const params = new URLSearchParams({ limit: String(limit), offset: String(offset) })
-  return apiGet<AdminFileList>(`/admin/files?${params}`)
+  if (q?.trim()) params.set('q', q.trim())
+  return apiGet<AdminUserList>(`/admin/roles/${roleId}/members?${params}`)
+}
+
+export async function addRoleMembers(
+  roleId: string,
+  userIds: string[],
+): Promise<MembersMutationResponse> {
+  return apiPostJson<MembersMutationResponse>(`/admin/roles/${roleId}/members`, {
+    user_ids: userIds,
+  })
+}
+
+export async function removeRoleMembers(
+  roleId: string,
+  userIds: string[],
+): Promise<MembersMutationResponse> {
+  return apiPostJson<MembersMutationResponse>(`/admin/roles/${roleId}/members:remove`, {
+    user_ids: userIds,
+  })
+}
+
+export async function listGroupMembers(
+  groupId: string,
+  limit = 50,
+  offset = 0,
+  q?: string,
+): Promise<AdminUserList> {
+  const params = new URLSearchParams({ limit: String(limit), offset: String(offset) })
+  if (q?.trim()) params.set('q', q.trim())
+  return apiGet<AdminUserList>(`/admin/groups/${groupId}/members?${params}`)
+}
+
+export async function addGroupMembers(
+  groupId: string,
+  userIds: string[],
+): Promise<MembersMutationResponse> {
+  return apiPostJson<MembersMutationResponse>(`/admin/groups/${groupId}/members`, {
+    user_ids: userIds,
+  })
+}
+
+export async function removeGroupMembers(
+  groupId: string,
+  userIds: string[],
+): Promise<MembersMutationResponse> {
+  return apiPostJson<MembersMutationResponse>(`/admin/groups/${groupId}/members:remove`, {
+    user_ids: userIds,
+  })
+}
+
+export async function listAdminFiles(params: ListAdminFilesParams = {}): Promise<AdminFileList> {
+  const { limit = 100, offset = 0, q, has_acl } = params
+  const search = new URLSearchParams({ limit: String(limit), offset: String(offset) })
+  if (q?.trim()) search.set('q', q.trim())
+  if (has_acl === true) search.set('has_acl', 'true')
+  if (has_acl === false) search.set('has_acl', 'false')
+  return apiGet<AdminFileList>(`/admin/files?${search}`)
 }
 
 export async function getFileAcl(fileId: string): Promise<FileAclResponse> {
@@ -170,6 +294,32 @@ export async function replaceFileAcl(
   grants: AclGrantInput[],
 ): Promise<FileAclResponse> {
   return apiPutJson<FileAclResponse>(`/admin/files/${fileId}/acl`, { grants })
+}
+
+export async function deleteFileAcl(fileId: string, aclId: string): Promise<FileAclResponse> {
+  return apiDeleteJson<FileAclResponse>(`/admin/files/${fileId}/acl/${aclId}`)
+}
+
+export async function bulkFileAcl(body: BulkAclRequest): Promise<BulkAclResponse> {
+  return apiPostJson<BulkAclResponse>('/admin/files/acl:bulk', body)
+}
+
+export async function listRoleFileGrants(
+  roleId: string,
+  limit = 50,
+  offset = 0,
+): Promise<FileGrantList> {
+  const params = new URLSearchParams({ limit: String(limit), offset: String(offset) })
+  return apiGet<FileGrantList>(`/admin/roles/${roleId}/file-grants?${params}`)
+}
+
+export async function listGroupFileGrants(
+  groupId: string,
+  limit = 50,
+  offset = 0,
+): Promise<FileGrantList> {
+  const params = new URLSearchParams({ limit: String(limit), offset: String(offset) })
+  return apiGet<FileGrantList>(`/admin/groups/${groupId}/file-grants?${params}`)
 }
 
 export async function getAclJob(jobId: string): Promise<AclJob> {

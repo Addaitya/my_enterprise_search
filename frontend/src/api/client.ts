@@ -136,4 +136,15 @@ export async function apiDelete(path: string): Promise<void> {
   }
 }
 
+export async function apiDeleteJson<T>(path: string): Promise<T> {
+  const response = await apiFetch(path, { method: 'DELETE' })
+  if (!response.ok && response.status !== 204) {
+    throw new ApiError(response.status, detailFromBody(await response.text()))
+  }
+  if (response.status === 204) {
+    return undefined as T
+  }
+  return (await response.json()) as T
+}
+
 export { detailFromBody }
