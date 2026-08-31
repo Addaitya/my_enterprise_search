@@ -2,9 +2,9 @@
 
 Company-internal hybrid search (keyword + semantic) over uploaded files, with role- and group-based access control. v1 accepts local **PDF / TXT / CSV** uploads.
 
-**Now:** Compose stack, Keycloak PKCE login, FastAPI JWT, OpenSearch 3.8 JWKS + `files_searcher` DLS, Postgres identity mirror + `files` / `file_acl` / `upload_sessions`, resumable ingest API, React multi-file `/upload`, **client-hybrid `POST /search`**, ACL-filtered **View files** + **Open** (MinIO stream).
+**Now:** Compose stack, Keycloak PKCE login, FastAPI JWT, OpenSearch 3.8 JWKS + `files_searcher` DLS, Postgres identity mirror + `files` / `file_acl` / `upload_sessions`, resumable ingest API, React multi-file `/upload`, **client-hybrid `POST /search`**, ACL-filtered **View files** + **Open** (MinIO stream), Admin **Users / Roles / Groups / Access** (identity CRUD, bulk file grants, role/group members, OpenSearch ACL sync jobs).
 
-**Not yet:** Admin ACL CRUD / dual-write progress UI (Task 6), native OpenSearch `hybrid`+DLS (needs 3.9+; product path uses client-side merge on 3.8).
+**Not yet:** Check-access explorer / audit CSV, Task 7 SKIP LOCKED + dual-write repair, native OpenSearch `hybrid`+DLS (needs 3.9+; product path uses client-side merge on 3.8).
 
 ## Stack
 
@@ -16,7 +16,7 @@ Company-internal hybrid search (keyword + semantic) over uploaded files, with ro
 | Search | OpenSearch 3.8.0 (ML Commons MiniLM ONNX embeddings; JWT via Keycloak JWKS) |
 | Storage | PostgreSQL 16 (identity mirror, file metadata, ACL, upload sessions), MinIO (bytes) |
 
-Request auth stays on the **JWT**. Postgres identity is a one-way Keycloak projection. File ACL lives only in Postgres (`viewer` / `editor` on a role or group). Uploads index chunks with **empty** ACL — searchable / listable only after grants (proof seed or Task 6). Admin is the Keycloak realm role `admin` (does **not** bypass file ACL).
+Request auth stays on the **JWT**. Postgres identity is a one-way Keycloak projection. File ACL lives only in Postgres (`viewer` / `editor` on a role or group). Uploads index chunks with **empty** ACL — searchable / listable only after an admin grant (Access tab / bulk APIs) or the optional seed script. Admin is the Keycloak realm role `admin` (does **not** bypass file ACL).
 
 ### Search on OpenSearch 3.8
 
@@ -102,8 +102,9 @@ Vite proxies `/api` → FastAPI. Sign in, then:
 - **Upload** (`/upload`) — PDF/TXT/CSV (25 MiB max each)
 - **Search** (`/`) — hybrid search + Open download
 - **View files** (`/files`) — ACL-filtered list + Open
+- **Admin** (`/admin`, realm `admin`) — Users / Roles / Groups / Access (file grants + members)
 
-`GET /health` is public. Product routes (`/auth/me`, `/search`, `/files*`, `/files/uploads*`) require a Bearer token.
+`GET /health` is public. Product routes (`/auth/me`, `/search`, `/files*`, `/files/uploads*`) require a Bearer token. Admin identity/ACL routes require realm role `admin`.
 
 OpenSearch verifies JWTs via Keycloak JWKS (`http://keycloak:8080/.../certs` from inside the container). Token `iss` stays `http://localhost:8080/realms/enterprise-search-realm`.
 
@@ -128,9 +129,21 @@ SPA client: `web-client`. API and OpenSearch audience: `api-client`.
 
 After a successful mirror you should see seed users plus Keycloak built-ins and the `api-client` service account (typically users=3, roles=5, groups=`engineering` + `_empty`).
 
+### Admin file access + members
+
+As `realm-admin` open `/admin`:
+
+| Tab | What it does |
+| --- | --- |
+| **Users** | Create/edit users; chip role/group pickers; multi-select → Add to role/group |
+| **Roles** / **Groups** | CRUD + **Members** (add/remove users) + **File access** (list grants, Grant files…) |
+| **Access** | Browse all files; Manage access (PUT replace-all); multi-select Grant/Revoke → sync job tray |
+
+File grants target **roles/groups** only (Viewer/Editor). Membership changes: Keycloak first, then Postgres; users must **re-login** before search JWT roles/groups update. Bulk file ACL: max 100 files; upsert / replace (`confirm_replace`) / revoke; partial `results[]` / `failed[]`.
+
 ### Optional: ACL seed for list / search proofs
 
-Uploads have **no** `file_acl` until Task 6. For local demos, seed one/two recent files:
+Uploads have **no** `file_acl` until an admin grant. For local demos without the Access UI, seed one/two recent files:
 
 ```bash
 cd backend
@@ -153,8 +166,8 @@ A file with no role/group grant is not searchable or listable. There is no autom
 
 ## Package docs
 
-- [backend/README.md](backend/README.md) — API, ingest, search, `init_services`, proofs
-- [frontend/README.md](frontend/README.md) — SPA routes, auth, search/files/upload clients
+- [backend/README.md](backend/README.md) — API (incl. `/admin/*`), ingest, search, `init_services`, proofs
+- [frontend/README.md](frontend/README.md) — SPA routes, auth, search/files/upload/admin clients
 
 ## Repo layout
 

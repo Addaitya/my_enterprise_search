@@ -1,6 +1,6 @@
 # Frontend
 
-React SPA for Enterprise Search: Keycloak PKCE login, protected routes, hybrid search, ACL-filtered file list/download, and a Drive-style multi-file upload client against the FastAPI API.
+React SPA for Enterprise Search: Keycloak PKCE login, protected routes, hybrid search, ACL-filtered file list/download, Drive-style multi-file upload, and an **Admin** console (Users / Roles / Groups / Access) against the FastAPI API.
 
 Stack: **React 19**, **Vite 8**, **TypeScript**, **Tailwind 4**, **Zustand**, **oidc-client-ts**, package manager **bun**.
 
@@ -41,7 +41,7 @@ From the repo root you can also run API + UI together:
 | `/` | signed-in | Hybrid search + results + Open download |
 | `/upload` | signed-in (`search-user` \| `admin`) | Multi-file resumable upload |
 | `/files` | signed-in | ACL-filtered file list + Open |
-| `/admin` | realm role `admin` | Admin placeholder (Task 6) |
+| `/admin` | realm role `admin` | Users / Roles / Groups / Access |
 
 ## Search (`/`)
 
@@ -73,9 +73,22 @@ Uses the backend resumable API (`initiate` → sequential **256 KiB** `Content-R
 
 Client modules:
 
-- `src/api/client.ts` — Bearer fetch, silent refresh on 401
+- `src/api/client.ts` — Bearer fetch, silent refresh on 401, `apiDeleteJson`
 - `src/api/uploads.ts` — validation + `resumableUpload` (XHR for parts)
 - `src/pages/Upload.tsx` — UI
+
+## Admin (`/admin`)
+
+Realm role `admin` only. Shell: `src/pages/Admin.tsx`. Panels under `src/pages/admin/`; shared widgets in `src/components/admin/`. API: `src/api/admin.ts`.
+
+| Tab | Capabilities |
+| --- | --- |
+| **Users** | List/search; create/edit with chip Role/Group pickers; multi-select → **Add to role…** / **Add to group…** |
+| **Roles** | Create/edit/delete; **Members** (add/remove users); **File access** (grants list + Grant files… / Remove) |
+| **Groups** | Create/delete; same Members + File access (system / `_empty` not manageable) |
+| **Access** | File table (search, has-access filter); Manage access drawer (PUT replace-all); multi-select Grant/Revoke; job tray |
+
+Copy uses “access” / “role or group” (not ACL/principal). After membership changes, UI notes that users must **re-login** before search JWT updates. File grants: Viewer/Editor; bulk default upsert; replace needs confirmation.
 
 ## Scripts
 

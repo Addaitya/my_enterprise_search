@@ -1,6 +1,6 @@
 # Backend
 
-FastAPI service for Enterprise Search: JWT auth against Keycloak, Postgres identity/files metadata + ACL, resumable local ingest into MinIO + OpenSearch, **client-hybrid search**, file list/open streams, and bootstrap via `init_services`.
+FastAPI service for Enterprise Search: JWT auth against Keycloak, Postgres identity/files metadata + ACL, resumable local ingest into MinIO + OpenSearch, **client-hybrid search**, file list/open streams, **admin identity + file ACL** (bulk grants, members, sync jobs), and bootstrap via `init_services`.
 
 Managed with [uv](https://docs.astral.sh/uv/). Python **3.12+**.
 
@@ -8,14 +8,14 @@ Managed with [uv](https://docs.astral.sh/uv/). Python **3.12+**.
 
 ```
 app/
-  api/routes/     health, auth, files (list/open + upload), search
+  api/routes/     health, auth, files, search, admin_identity, admin_acl
   core/           settings, JWT verification
-  models/         identity, files, file_acl, upload_sessions
-  services/       file_access, opensearch_search, upload, staging, MinIO, OpenSearch bulk, ingest/*
-  schemas/        request/response models (files, search, uploads)
+  models/         identity, files, file_acl, upload_sessions, acl_sync_jobs
+  services/       file_access, file_acl_admin, acl_sync, identity_admin, keycloak_admin, opensearch_search, upload, …
+  schemas/        request/response models (files, search, uploads, admin_*)
 alembic/          migrations (run manually; not part of init_services)
 init_services/    Keycloak, identity mirror, OpenSearch security/ML/index, MinIO bucket
-scripts/          ingest_*, search_unit_checks, search_view_proof, seed_file_acl_for_proofs
+scripts/          ingest_*, search_*, seed_file_acl_for_proofs, admin_*_proof
 ```
 
 ## Setup
@@ -57,6 +57,38 @@ OpenAPI: http://localhost:8000/docs
 | `POST` | `/files/uploads/{id}/complete` | owner | Parse → MinIO put → `files` row → OS bulk |
 | `DELETE` | `/files/uploads/{id}` | owner | Cancel; drop local staging |
 
+### Admin identity (`require_admin`)
+
+| Method | Path | Notes |
+| --- | --- | --- |
+| `GET/POST` | `/admin/users` | List (`q`, limit/offset) / create |
+| `GET/PATCH` | `/admin/users/{id}` | Detail / update (roles+groups replace via Keycloak then PG) |
+| `GET/POST` | `/admin/roles` | List (`include_system`) / create |
+| `GET/PATCH/DELETE` | `/admin/roles/{id}` | Detail / update / delete (product roles) |
+| `GET/POST` | `/admin/roles/{id}/members` | List members (`q`); add users (additive; max 100) |
+| `POST` | `/admin/roles/{id}/members:remove` | Remove users; keep `search-user` and/or `admin` |
+| `GET/POST` | `/admin/groups` | List / create |
+| `GET/DELETE` | `/admin/groups/{id}` | Detail / delete |
+| `GET/POST` | `/admin/groups/{id}/members` | List / add (rejects `_empty` / system) |
+| `POST` | `/admin/groups/{id}/members:remove` | Remove; may mirror `_empty` when no product groups left |
+
+Member mutations return `results[]` + `failed[]` (HTTP 200 on partial success). Keycloak first, then Postgres.
+
+### Admin file ACL (`require_admin`)
+
+| Method | Path | Notes |
+| --- | --- | --- |
+| `GET` | `/admin/files` | All files; optional `q`, `has_acl`; `access_total` / `access_preview` |
+| `POST` | `/admin/files/acl:bulk` | upsert / replace / revoke; max 100 `file_ids`; per-file commit + enqueue |
+| `GET/PUT/POST` | `/admin/files/{id}/acl` | List / replace-all / upsert one (+ `acl_job_id`) |
+| `DELETE` | `/admin/files/{id}/acl/{acl_id}` | Revoke one + enqueue |
+| `GET` | `/admin/roles/{id}/file-grants` | Files this role can access |
+| `GET` | `/admin/groups/{id}/file-grants` | Files this group can access |
+| `GET` | `/admin/acl-jobs` / `{id}` | Job list / detail |
+| `POST` | `/admin/acl-jobs/{id}/retry` | failed → queued |
+
+Grants are **role/group** only (`viewer` \| `editor`). System / `_empty` → **400**. Bulk `replace` needs `confirm_replace: true`. Flow: mutate Postgres → enqueue `acl_sync_jobs` → worker updates OpenSearch `allowed_*`.
+
 Vite proxies `/api/*` to these paths (no `/api` prefix on FastAPI itself).
 
 ### Search (`POST /search`)
@@ -76,7 +108,7 @@ Hits are **chunk-grain** (snippet, `file_id`, `chunk_seq`, score, `display_name`
 
 - List/metadata/content use Postgres `file_acl` matched on JWT **role/group names** (`viewer` \| `editor`; ignore `_empty`). Realm `admin` does **not** bypass ACL.
 - Content streams `files.object_store_path` from MinIO only after ACL pass (**403** deny, **404** missing). No client-supplied object keys.
-- Uploads start with **empty** ACL — list/search stay empty until grants (seed script or Task 6).
+- Uploads start with **empty** ACL — list/search stay empty until an admin grant (Access UI / bulk APIs) or the seed script.
 
 ### Ingest rules
 
@@ -114,6 +146,10 @@ uv run python -m scripts.ingest_proof            # live JWT upload → PG/MinIO/
 uv run python -m scripts.search_unit_checks      # offline merge / DTO strip
 uv run python -m scripts.seed_file_acl_for_proofs  # optional G3 ACL + OS allowed_*
 uv run python -m scripts.search_view_proof       # list/open + client-hybrid DLS
+uv run python -m scripts.admin_identity_proof    # identity CRUD
+uv run python -m scripts.admin_acl_proof         # single-file ACL + sync jobs
+uv run python -m scripts.admin_file_access_proof # bulk ACL + file-grants filters
+uv run python -m scripts.admin_member_assignment_proof  # role/group members
 ```
 
 `seed_file_acl_for_proofs` grants role `search-user` on file A and group `engineering` on file B (idempotent; never `_empty`), then `update_by_query` copies names into chunk `allowed_*`.
