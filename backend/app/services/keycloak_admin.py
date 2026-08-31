@@ -250,6 +250,43 @@ class KeycloakAdmin:
                         f"assign roles failed: {response.status_code} {response.text}"
                     )
 
+    def add_user_realm_role(self, user_id: str, role_name: str) -> None:
+        """Add one product realm role (no-op if already present). Does not touch other roles."""
+        if is_system_role_name(role_name):
+            raise KeycloakAdminError(f"Cannot assign system role {role_name}", status_code=400)
+        with self._client() as client:
+            current = self._json(client.get(f"/users/{user_id}/role-mappings/realm")) or []
+            if any(role.get("name") == role_name for role in current):
+                return
+            representation = self._json(client.get(f"/roles/{role_name}"))
+            response = client.post(
+                f"/users/{user_id}/role-mappings/realm",
+                json=[representation],
+            )
+            if response.is_error:
+                raise KeycloakAdminError(
+                    f"assign role failed: {response.status_code} {response.text}"
+                )
+
+    def remove_user_realm_role(self, user_id: str, role_name: str) -> None:
+        """Remove one product realm role (no-op if absent). Does not touch other roles."""
+        if is_system_role_name(role_name):
+            raise KeycloakAdminError(f"Cannot remove system role {role_name}", status_code=400)
+        with self._client() as client:
+            current = self._json(client.get(f"/users/{user_id}/role-mappings/realm")) or []
+            match = next((role for role in current if role.get("name") == role_name), None)
+            if match is None:
+                return
+            response = client.request(
+                "DELETE",
+                f"/users/{user_id}/role-mappings/realm",
+                json=[match],
+            )
+            if response.is_error:
+                raise KeycloakAdminError(
+                    f"remove role failed: {response.status_code} {response.text}"
+                )
+
     def replace_user_groups(self, user_id: str, group_names: list[str]) -> None:
         """Set product groups. Empty product list → join ``_empty`` sentinel only."""
         product = [name for name in group_names if name != GROUPS_EMPTY_SENTINEL]
@@ -273,6 +310,69 @@ class KeycloakAdmin:
                     raise KeycloakAdminError(
                         f"join group failed: {response.status_code} {response.text}"
                     )
+
+    def join_user_group(self, user_id: str, group_name: str) -> None:
+        """Join one group by name (no-op if already a member). Leaves other groups alone."""
+        with self._client() as client:
+            current = self._json(client.get(f"/users/{user_id}/groups")) or []
+            if any(group.get("name") == group_name for group in current):
+                return
+            group = self._group_by_name(client, group_name)
+            response = client.put(f"/users/{user_id}/groups/{group['id']}")
+            if response.is_error:
+                raise KeycloakAdminError(
+                    f"join group failed: {response.status_code} {response.text}"
+                )
+            # Leaving _empty when joining a product group keeps KC consistent with replace path.
+            if group_name != GROUPS_EMPTY_SENTINEL:
+                empty = next(
+                    (g for g in current if g.get("name") == GROUPS_EMPTY_SENTINEL),
+                    None,
+                )
+                if empty is not None:
+                    leave = client.delete(f"/users/{user_id}/groups/{empty['id']}")
+                    if leave.is_error:
+                        raise KeycloakAdminError(
+                            f"leave _empty failed: {leave.status_code} {leave.text}"
+                        )
+
+    def leave_user_group(self, user_id: str, group_name: str) -> None:
+        """Leave one group by name. If no product groups remain, join ``_empty``."""
+        with self._client() as client:
+            current = self._json(client.get(f"/users/{user_id}/groups")) or []
+            match = next((group for group in current if group.get("name") == group_name), None)
+            if match is None:
+                # Still ensure _empty if no product groups left.
+                product_left = [
+                    g for g in current if g.get("name") != GROUPS_EMPTY_SENTINEL
+                ]
+                if not product_left and group_name != GROUPS_EMPTY_SENTINEL:
+                    if not any(g.get("name") == GROUPS_EMPTY_SENTINEL for g in current):
+                        empty = self._group_by_name(client, GROUPS_EMPTY_SENTINEL)
+                        response = client.put(f"/users/{user_id}/groups/{empty['id']}")
+                        if response.is_error:
+                            raise KeycloakAdminError(
+                                f"join _empty failed: {response.status_code} {response.text}"
+                            )
+                return
+            response = client.delete(f"/users/{user_id}/groups/{match['id']}")
+            if response.is_error:
+                raise KeycloakAdminError(
+                    f"leave group failed: {response.status_code} {response.text}"
+                )
+            remaining = [
+                g
+                for g in current
+                if g.get("name") != group_name and g.get("name") != GROUPS_EMPTY_SENTINEL
+            ]
+            if not remaining and group_name != GROUPS_EMPTY_SENTINEL:
+                if not any(g.get("name") == GROUPS_EMPTY_SENTINEL for g in current):
+                    empty = self._group_by_name(client, GROUPS_EMPTY_SENTINEL)
+                    join = client.put(f"/users/{user_id}/groups/{empty['id']}")
+                    if join.is_error:
+                        raise KeycloakAdminError(
+                            f"join _empty failed: {join.status_code} {join.text}"
+                        )
 
     def _group_by_name(self, client: httpx.Client, name: str) -> dict[str, Any]:
         groups = self._json(client.get("/groups", params={"search": name})) or []

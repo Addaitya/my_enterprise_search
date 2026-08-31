@@ -1,4 +1,4 @@
-"""Admin identity routes: users / roles / groups (Task 6a)."""
+"""Admin identity routes: users / roles / groups (Task 6a) + members (12b)."""
 
 from __future__ import annotations
 
@@ -14,6 +14,8 @@ from app.schemas.admin_identity import (
     GroupCreate,
     GroupListResponse,
     GroupOut,
+    MembersMutationRequest,
+    MembersMutationResponse,
     RoleCreate,
     RoleListResponse,
     RoleOut,
@@ -120,6 +122,39 @@ def delete_role(
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
+@router.get("/roles/{role_id}/members", response_model=UserListResponse)
+def list_role_members(
+    role_id: UUID,
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    q: str | None = Query(None),
+    _admin: CurrentUser = Depends(require_admin),
+    service: IdentityAdminService = Depends(_service),
+) -> UserListResponse:
+    items, total = service.list_role_members(role_id, limit=limit, offset=offset, q=q)
+    return UserListResponse(items=items, total=total, limit=limit, offset=offset)
+
+
+@router.post("/roles/{role_id}/members", response_model=MembersMutationResponse)
+def add_role_members(
+    role_id: UUID,
+    body: MembersMutationRequest,
+    _admin: CurrentUser = Depends(require_admin),
+    service: IdentityAdminService = Depends(_service),
+) -> MembersMutationResponse:
+    return service.add_users_to_role(role_id, body.user_ids)
+
+
+@router.post("/roles/{role_id}/members:remove", response_model=MembersMutationResponse)
+def remove_role_members(
+    role_id: UUID,
+    body: MembersMutationRequest,
+    _admin: CurrentUser = Depends(require_admin),
+    service: IdentityAdminService = Depends(_service),
+) -> MembersMutationResponse:
+    return service.remove_users_from_role(role_id, body.user_ids)
+
+
 @router.get("/groups", response_model=GroupListResponse)
 def list_groups(
     include_system: bool = Query(False),
@@ -156,3 +191,36 @@ def delete_group(
 ) -> Response:
     service.delete_group(group_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get("/groups/{group_id}/members", response_model=UserListResponse)
+def list_group_members(
+    group_id: UUID,
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    q: str | None = Query(None),
+    _admin: CurrentUser = Depends(require_admin),
+    service: IdentityAdminService = Depends(_service),
+) -> UserListResponse:
+    items, total = service.list_group_members(group_id, limit=limit, offset=offset, q=q)
+    return UserListResponse(items=items, total=total, limit=limit, offset=offset)
+
+
+@router.post("/groups/{group_id}/members", response_model=MembersMutationResponse)
+def add_group_members(
+    group_id: UUID,
+    body: MembersMutationRequest,
+    _admin: CurrentUser = Depends(require_admin),
+    service: IdentityAdminService = Depends(_service),
+) -> MembersMutationResponse:
+    return service.add_users_to_group(group_id, body.user_ids)
+
+
+@router.post("/groups/{group_id}/members:remove", response_model=MembersMutationResponse)
+def remove_group_members(
+    group_id: UUID,
+    body: MembersMutationRequest,
+    _admin: CurrentUser = Depends(require_admin),
+    service: IdentityAdminService = Depends(_service),
+) -> MembersMutationResponse:
+    return service.remove_users_from_group(group_id, body.user_ids)

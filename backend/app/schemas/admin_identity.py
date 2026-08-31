@@ -143,3 +143,24 @@ class GroupOut(BaseModel):
 class GroupListResponse(BaseModel):
     items: list[GroupOut]
     total: int
+
+
+# --- Member assignment (12b) ---
+
+MEMBERS_MAX_USERS = 100
+
+
+class MembersMutationRequest(BaseModel):
+    """``user_ids`` non-empty; max 100 enforced in service (HTTP 400)."""
+
+    user_ids: list[UUID] = Field(min_length=1)
+
+
+class MembersFailed(BaseModel):
+    user_id: UUID
+    error: str
+
+
+class MembersMutationResponse(BaseModel):
+    results: list[UserOut]
+    failed: list[MembersFailed]

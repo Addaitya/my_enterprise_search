@@ -16,6 +16,9 @@ from app.models.identity import Group, Role, User, UserGroup, UserRole
 from app.schemas.admin_identity import (
     GroupCreate,
     GroupOut,
+    MEMBERS_MAX_USERS,
+    MembersFailed,
+    MembersMutationResponse,
     RoleCreate,
     RoleOut,
     UserCreate,
@@ -405,7 +408,344 @@ class IdentityAdminService:
                 detail=f"Postgres delete failed; {ORPHAN_HINT} (group={name})",
             ) from exc
 
+    # --- Members (12b) ---
+
+    def list_role_members(
+        self,
+        role_id: uuid.UUID,
+        *,
+        limit: int,
+        offset: int,
+        q: str | None,
+    ) -> tuple[list[UserOut], int]:
+        role = self.db.get(Role, role_id)
+        if role is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Role not found")
+        return self._list_members_for_link(
+            UserRole,
+            UserRole.role_id == role_id,
+            limit=limit,
+            offset=offset,
+            q=q,
+        )
+
+    def list_group_members(
+        self,
+        group_id: uuid.UUID,
+        *,
+        limit: int,
+        offset: int,
+        q: str | None,
+    ) -> tuple[list[UserOut], int]:
+        group = self.db.get(Group, group_id)
+        if group is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group not found")
+        if group.name == GROUPS_EMPTY_SENTINEL or group.is_system:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Cannot manage members of system group",
+            )
+        return self._list_members_for_link(
+            UserGroup,
+            UserGroup.group_id == group_id,
+            limit=limit,
+            offset=offset,
+            q=q,
+        )
+
+    def add_users_to_role(
+        self, role_id: uuid.UUID, user_ids: list[uuid.UUID]
+    ) -> MembersMutationResponse:
+        role = self.db.get(Role, role_id)
+        if role is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Role not found")
+        ids = self._normalize_user_ids(user_ids)
+        results: list[UserOut] = []
+        failed: list[MembersFailed] = []
+        for uid in ids:
+            try:
+                results.append(self._add_user_role(uid, role))
+            except Exception as exc:  # noqa: BLE001
+                failed.append(MembersFailed(user_id=uid, error=self._member_error(exc)))
+        return MembersMutationResponse(results=results, failed=failed)
+
+    def remove_users_from_role(
+        self, role_id: uuid.UUID, user_ids: list[uuid.UUID]
+    ) -> MembersMutationResponse:
+        role = self.db.get(Role, role_id)
+        if role is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Role not found")
+        ids = self._normalize_user_ids(user_ids)
+        results: list[UserOut] = []
+        failed: list[MembersFailed] = []
+        for uid in ids:
+            try:
+                results.append(self._remove_user_role(uid, role))
+            except Exception as exc:  # noqa: BLE001
+                failed.append(MembersFailed(user_id=uid, error=self._member_error(exc)))
+        return MembersMutationResponse(results=results, failed=failed)
+
+    def add_users_to_group(
+        self, group_id: uuid.UUID, user_ids: list[uuid.UUID]
+    ) -> MembersMutationResponse:
+        group = self._require_manageable_group(group_id)
+        ids = self._normalize_user_ids(user_ids)
+        results: list[UserOut] = []
+        failed: list[MembersFailed] = []
+        for uid in ids:
+            try:
+                results.append(self._add_user_group(uid, group))
+            except Exception as exc:  # noqa: BLE001
+                failed.append(MembersFailed(user_id=uid, error=self._member_error(exc)))
+        return MembersMutationResponse(results=results, failed=failed)
+
+    def remove_users_from_group(
+        self, group_id: uuid.UUID, user_ids: list[uuid.UUID]
+    ) -> MembersMutationResponse:
+        group = self._require_manageable_group(group_id)
+        ids = self._normalize_user_ids(user_ids)
+        results: list[UserOut] = []
+        failed: list[MembersFailed] = []
+        for uid in ids:
+            try:
+                results.append(self._remove_user_group(uid, group))
+            except Exception as exc:  # noqa: BLE001
+                failed.append(MembersFailed(user_id=uid, error=self._member_error(exc)))
+        return MembersMutationResponse(results=results, failed=failed)
+
     # --- helpers ---
+
+    def _require_manageable_group(self, group_id: uuid.UUID) -> Group:
+        group = self.db.get(Group, group_id)
+        if group is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group not found")
+        if group.name == GROUPS_EMPTY_SENTINEL or group.is_system:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Cannot manage members of system group",
+            )
+        return group
+
+    @staticmethod
+    def _normalize_user_ids(user_ids: list[uuid.UUID]) -> list[uuid.UUID]:
+        if not user_ids:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="user_ids cannot be empty",
+            )
+        # Preserve order while deduping.
+        seen: set[uuid.UUID] = set()
+        unique: list[uuid.UUID] = []
+        for uid in user_ids:
+            if uid in seen:
+                continue
+            seen.add(uid)
+            unique.append(uid)
+        if len(unique) > MEMBERS_MAX_USERS:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"user_ids exceeds max of {MEMBERS_MAX_USERS}",
+            )
+        return unique
+
+    def _list_members_for_link(
+        self,
+        join_model: type[UserRole] | type[UserGroup],
+        link_filter,
+        *,
+        limit: int,
+        offset: int,
+        q: str | None,
+    ) -> tuple[list[UserOut], int]:
+        base = (
+            select(User)
+            .join(join_model, join_model.user_id == User.id)
+            .where(link_filter)
+            .options(
+                selectinload(User.role_links).selectinload(UserRole.role),
+                selectinload(User.group_links).selectinload(UserGroup.group),
+            )
+        )
+        count_base = (
+            select(func.count())
+            .select_from(User)
+            .join(join_model, join_model.user_id == User.id)
+            .where(link_filter)
+        )
+        if q:
+            pattern = f"%{q.strip()}%"
+            filt = or_(User.username.ilike(pattern), User.email.ilike(pattern))
+            base = base.where(filt)
+            count_base = count_base.where(filt)
+        total = int(self.db.scalar(count_base) or 0)
+        rows = self.db.scalars(base.order_by(User.username).offset(offset).limit(limit)).all()
+        return [self._user_out(row) for row in rows], total
+
+    def _add_user_role(self, user_id: uuid.UUID, role: Role) -> UserOut:
+        user = self._load_user(user_id)
+        if user is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+        already = any(link.role_id == role.id for link in user.role_links)
+        if already:
+            return self._user_out(user)
+        try:
+            self.kc.add_user_realm_role(str(user_id), role.name)
+        except KeycloakAdminError as exc:
+            raise self._http_from_kc(exc) from exc
+        try:
+            self.db.add(UserRole(user_id=user_id, role_id=role.id))
+            user.updated_at = _now()
+            self.db.commit()
+        except Exception as exc:  # noqa: BLE001
+            self.db.rollback()
+            logger.exception(
+                "Postgres mirror failed after Keycloak add role user=%s role=%s",
+                user_id,
+                role.name,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=f"Postgres mirror failed; {ORPHAN_HINT} (user_id={user_id})",
+            ) from exc
+        return self.get_user(user_id)
+
+    def _remove_user_role(self, user_id: uuid.UUID, role: Role) -> UserOut:
+        user = self._load_user(user_id)
+        if user is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+        has_link = any(link.role_id == role.id for link in user.role_links)
+        if not has_link:
+            return self._user_out(user)
+
+        remaining = {
+            link.role.name
+            for link in user.role_links
+            if link.role and link.role_id != role.id and not is_system_role_name(link.role.name)
+        }
+        # MA4: after remove, user must still have search-user and/or admin.
+        if not any(name in {"search-user", "admin"} for name in remaining):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Cannot remove last search-user/admin role",
+            )
+
+        try:
+            self.kc.remove_user_realm_role(str(user_id), role.name)
+        except KeycloakAdminError as exc:
+            raise self._http_from_kc(exc) from exc
+        try:
+            self.db.execute(
+                delete(UserRole).where(
+                    UserRole.user_id == user_id,
+                    UserRole.role_id == role.id,
+                )
+            )
+            user.updated_at = _now()
+            self.db.commit()
+        except Exception as exc:  # noqa: BLE001
+            self.db.rollback()
+            logger.exception(
+                "Postgres mirror failed after Keycloak remove role user=%s role=%s",
+                user_id,
+                role.name,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=f"Postgres mirror failed; {ORPHAN_HINT} (user_id={user_id})",
+            ) from exc
+        return self.get_user(user_id)
+
+    def _add_user_group(self, user_id: uuid.UUID, group: Group) -> UserOut:
+        user = self._load_user(user_id)
+        if user is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+        already = any(link.group_id == group.id for link in user.group_links)
+        if already:
+            return self._user_out(user)
+        try:
+            self.kc.join_user_group(str(user_id), group.name)
+        except KeycloakAdminError as exc:
+            raise self._http_from_kc(exc) from exc
+        try:
+            empty = self.db.scalar(select(Group).where(Group.name == GROUPS_EMPTY_SENTINEL))
+            if empty is not None:
+                self.db.execute(
+                    delete(UserGroup).where(
+                        UserGroup.user_id == user_id,
+                        UserGroup.group_id == empty.id,
+                    )
+                )
+            self.db.add(UserGroup(user_id=user_id, group_id=group.id))
+            user.updated_at = _now()
+            self.db.commit()
+        except Exception as exc:  # noqa: BLE001
+            self.db.rollback()
+            logger.exception(
+                "Postgres mirror failed after Keycloak join group user=%s group=%s",
+                user_id,
+                group.name,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=f"Postgres mirror failed; {ORPHAN_HINT} (user_id={user_id})",
+            ) from exc
+        return self.get_user(user_id)
+
+    def _remove_user_group(self, user_id: uuid.UUID, group: Group) -> UserOut:
+        user = self._load_user(user_id)
+        if user is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+        has_link = any(link.group_id == group.id for link in user.group_links)
+        if not has_link:
+            return self._user_out(user)
+
+        try:
+            self.kc.leave_user_group(str(user_id), group.name)
+        except KeycloakAdminError as exc:
+            raise self._http_from_kc(exc) from exc
+        try:
+            self.db.execute(
+                delete(UserGroup).where(
+                    UserGroup.user_id == user_id,
+                    UserGroup.group_id == group.id,
+                )
+            )
+            remaining_product = [
+                link
+                for link in user.group_links
+                if link.group_id != group.id
+                and link.group
+                and link.group.name != GROUPS_EMPTY_SENTINEL
+            ]
+            if not remaining_product:
+                empty = self.db.scalar(select(Group).where(Group.name == GROUPS_EMPTY_SENTINEL))
+                if empty is not None:
+                    already_empty = any(link.group_id == empty.id for link in user.group_links)
+                    if not already_empty:
+                        self.db.add(UserGroup(user_id=user_id, group_id=empty.id))
+            user.updated_at = _now()
+            self.db.commit()
+        except Exception as exc:  # noqa: BLE001
+            self.db.rollback()
+            logger.exception(
+                "Postgres mirror failed after Keycloak leave group user=%s group=%s",
+                user_id,
+                group.name,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=f"Postgres mirror failed; {ORPHAN_HINT} (user_id={user_id})",
+            ) from exc
+        return self.get_user(user_id)
+
+    @staticmethod
+    def _member_error(exc: Exception) -> str:
+        if isinstance(exc, HTTPException):
+            detail = exc.detail
+            if isinstance(detail, str):
+                return detail
+            return str(detail)
+        return str(exc)
 
     def _load_user(self, user_id: uuid.UUID) -> User | None:
         return self.db.scalars(
