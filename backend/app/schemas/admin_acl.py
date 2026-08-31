@@ -1,4 +1,4 @@
-"""Pydantic schemas for Admin file ACL + sync jobs (Task 6b)."""
+"""Pydantic schemas for Admin file ACL + sync jobs (Task 6b / 12a)."""
 
 from __future__ import annotations
 
@@ -9,6 +9,13 @@ from uuid import UUID
 from pydantic import BaseModel, Field, model_validator
 
 
+class AccessPreviewOut(BaseModel):
+    principal_type: Literal["role", "group"]
+    principal_id: UUID
+    principal_name: str
+    permission: str
+
+
 class AdminFileOut(BaseModel):
     id: UUID
     display_name: str
@@ -17,6 +24,8 @@ class AdminFileOut(BaseModel):
     object_store_path: str
     uploaded_at: datetime
     updated_at: datetime
+    access_total: int = 0
+    access_preview: list[AccessPreviewOut] = Field(default_factory=list)
 
 
 class AdminFileListResponse(BaseModel):
@@ -68,6 +77,45 @@ class FileAclResponse(BaseModel):
     file_id: UUID
     grants: list[AclGrantOut]
     acl_job_id: UUID | None = None
+
+
+class BulkAclRequest(BaseModel):
+    file_ids: list[UUID]
+    mode: Literal["upsert", "replace", "revoke"]
+    grants: list[AclGrantIn] = Field(default_factory=list)
+    confirm_replace: bool = False
+
+
+class BulkAclResult(BaseModel):
+    file_id: UUID
+    grants: list[AclGrantOut]
+    acl_job_id: UUID | None = None
+
+
+class BulkAclFailed(BaseModel):
+    file_id: UUID
+    error: str
+
+
+class BulkAclResponse(BaseModel):
+    results: list[BulkAclResult]
+    failed: list[BulkAclFailed]
+
+
+class FileGrantItemOut(BaseModel):
+    acl_id: UUID
+    file_id: UUID
+    display_name: str
+    file_type: str
+    permission: str
+    updated_at: datetime
+
+
+class FileGrantListResponse(BaseModel):
+    items: list[FileGrantItemOut]
+    total: int
+    limit: int
+    offset: int
 
 
 class AclJobOut(BaseModel):
