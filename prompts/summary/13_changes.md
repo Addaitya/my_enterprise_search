@@ -26,7 +26,7 @@ Non-admin: **403** on `GET /admin/stats`; no Dashboard / Access Control(Admin) /
 | --- | --- |
 | Migration | `backend/alembic/versions/c3d4e5f6a7b8_search_query_metrics.py` (revises `b2c3d4e5f6a7`) |
 | Model | `backend/app/models/search_metrics.py` (`SearchQueryMetric`) — exported from `app/models/__init__.py` |
-| Persist | `backend/app/services/search_metrics.py` — `record_search_metric(took_ms)` opens its own session |
+| Persist | `backend/app/services/search_metrics.py` — `record_search_metric(os_took_ms)` opens its own session |
 | Search hook | `backend/app/api/routes/search.py` — `BackgroundTasks` after successful hybrid search only |
 | MinIO | `MinioStore.sum_object_sizes()` — recursive list + sum; empty → `0`; errors → `MinioStatsError` (not 0) |
 | Schema | `backend/app/schemas/admin_stats.py` (`AdminStatsOut`) |
@@ -38,7 +38,7 @@ Non-admin: **403** on `GET /admin/stats`; no Dashboard / Access Control(Admin) /
 
 Live stats on read:
 
-- `avg_query_time_ms` = `AVG(took_ms)` where `created_at >= now() - interval '24 hours'` (`null` if empty window)
+- `avg_query_time_ms` = `AVG(took_ms)` where `created_at >= now() - interval '24 hours'` (`null` if empty window). Stored `took_ms` is OpenSearch `took` (see follow-on).
 - `total_data_ingested_bytes` = MinIO bucket `enterprise-search-files` object-size sum
 - `total_docs_indexed` = `COUNT(*) FROM files`
 
@@ -66,7 +66,7 @@ DTO example:
 }
 ```
 
-OpenSearch is **not** queried for these stats. Postgres errors stay 500. Failed searches are not recorded (they never reach the insert).
+OpenSearch is **not** queried at stats read time. Samples are OpenSearch `took` captured at search time (see follow-on below). Postgres errors stay 500. Failed searches are not recorded (they never reach the insert).
 
 ### Frontend
 
@@ -83,7 +83,7 @@ Navbar (admin): Search | Upload | View files | **Dashboard** | **Access Control(
 
 UI formatting (from API values, not hardcoded 8 / 12400 / `"2 min ago"`):
 
-- Avg card title: **Avg query time (last 24 hours)**; `null` → `—`
+- Avg card title: **Avg OpenSearch query time (last 24 hours)**; `null` → `—`
 - Bytes → B / KB / MB / GB
 - Rate → locale `12,400 docs/hr`
 - Last sync rendered as the API string as-is
@@ -202,13 +202,112 @@ Stack: Postgres, MinIO, OpenSearch, Keycloak, API `http://localhost:8000`, UI `h
 - Configuration forms / settings persistence
 - Renaming backend `/admin/users` etc. or Keycloak clients
 - Renaming `Admin.tsx`, `AdminRoute`, URL `/admin`, or the Access tab
-- Changing Search / Upload / View files behavior (except recording successful `took_ms`)
+- Changing Search / Upload / View files behavior (except recording successful OpenSearch `took`)
 - OpenSearch `_count` / index store size on the dashboard
 - Native hybrid on OpenSearch 3.8 (unchanged)
 
 ---
 
-## Follow-on
+## Follow-on: persist OpenSearch `took` for dashboard avg (10 Sep 2026)
+
+**Problem.** Slice 13 stored FastAPI wall-clock `took_ms` (`time.perf_counter()` around hybrid search) in Postgres. That includes HTTP, Python merge, and network — not OpenSearch’s own query time. Dashboard `GET /admin/stats` still reads only Postgres; OpenSearch is never queried at stats time.
+
+**Decision.** Keep the table, `BackgroundTasks` insert, and 24h `AVG`. Change the **sample** to OpenSearch response `"took"` (ms):
+
+| `search_mode` | OpenSearch calls | Stored `search_query_metrics.took_ms` |
+| --- | --- | --- |
+| `client_hybrid` (today, OS 3.8) | Parallel match + neural | `took_match + took_neural` |
+| `native_hybrid` (later) | One `_search` + pipeline | that single `took` |
+
+Sum is **total OpenSearch query work** for one product search, not elapsed wall time (the two client-hybrid queries run in parallel). When product flips to native hybrid, the same persist path works with no stats-query change; the 24h average will naturally drop from two OS queries to one.
+
+`POST /search` JSON `took_ms` stays **wall-clock** for the Search UI. Dashboard avg can differ from the number shown next to hits.
+
+No Alembic revision: reuse `took_ms` INTEGER. Existing 24h rows may mix old wall-clock samples with new OS samples until they age out.
+
+### Files changed
+
+#### [`backend/app/services/opensearch_search.py`](../../backend/app/services/opensearch_search.py)
+
+- `SearchResult`: added `os_took_ms` (OpenSearch). `took_ms` remains wall-clock.
+- `_payload_took(payload)`: `int(payload["took"])`; missing/invalid → `0`.
+- `search_match` / `search_neural`: now return `(hits, took)` instead of hits only.
+- `client_hybrid_search`: `os_took_ms = kw_took + nn_took`.
+- `native_hybrid_search`: `os_took_ms = _payload_took(payload)` from the one `_os_search`.
+
+#### [`backend/app/api/routes/search.py`](../../backend/app/api/routes/search.py)
+
+```python
+background.add_task(record_search_metric, result.os_took_ms)
+return SearchResponse(..., took_ms=result.took_ms, ...)
+```
+
+Failed searches still never insert (502/503/400 exit before the task).
+
+#### [`backend/app/models/search_metrics.py`](../../backend/app/models/search_metrics.py)
+
+Docstring only: column is OpenSearch `took` (sum or single). Schema unchanged.
+
+#### [`backend/app/services/search_metrics.py`](../../backend/app/services/search_metrics.py)
+
+Docstring only. Still `SearchQueryMetric(took_ms=took_ms)` in its own session.
+
+#### [`backend/app/services/admin_stats.py`](../../backend/app/services/admin_stats.py)
+
+`_avg_query_time_ms` SQL unchanged (`AVG` last 24 hours). Module comment: OpenSearch is not queried **at read time**; samples were captured at search time.
+
+#### [`frontend/src/pages/Dashboard.tsx`](../../frontend/src/pages/Dashboard.tsx)
+
+Card title: **Avg OpenSearch query time (last 24 hours)**. Formatting unchanged (`null` → `—`).
+
+#### Proofs / unit / docs
+
+- [`backend/scripts/search_unit_checks.py`](../../backend/scripts/search_unit_checks.py) — `test_payload_took` (`12`, `12.9`→`12`, missing/`None`/bad string → `0`).
+- [`backend/scripts/admin_stats_proof.py`](../../backend/scripts/admin_stats_proof.py) — proof 4 still requires a metrics row and a non-null avg; **does not** require `avg == search.took_ms` (wall-clock vs OS `took`).
+- [`backend/README.md`](../../backend/README.md), [`README.md`](../../README.md), [`frontend/README.md`](../../frontend/README.md) — avg is OpenSearch `took`; API `took_ms` is wall-clock.
+
+### Unchanged
+
+- Table `search_query_metrics` / migration `c3d4e5f6a7b8`
+- `GET /admin/stats` DTO (`avg_query_time_ms`)
+- MinIO / `COUNT(*) FROM files` / placeholders
+- Native hybrid still not the product default on 3.8
+- No OpenSearch `_nodes/stats` or cluster APIs on the dashboard
+
+### Flow
+
+```
+POST /search
+  client_hybrid: match._search (took_kw) ∥ neural._search (took_nn)
+      os_took_ms = took_kw + took_nn
+  native_hybrid: one _search (took)
+      os_took_ms = took
+  BackgroundTasks → INSERT search_query_metrics(took_ms=os_took_ms)
+  Response took_ms = wall-clock
+
+GET /admin/stats
+  AVG(search_query_metrics.took_ms) WHERE created_at >= now() - 24h
+```
+
+### How to verify
+
+```bash
+cd backend
+uv run python -m scripts.search_unit_checks
+# with API + stack up:
+uv run python -m scripts.admin_stats_proof
+```
+
+Ran **10 Sep 2026** against the live API:
+
+- `search_unit_checks` — all passed including `_payload_took`
+- `admin_stats_proof` — all four `[ok]`. Proof 4: API wall-clock `took_ms=171`, dashboard `avg_query_time_ms=142.0` (mean of stored OpenSearch `took` samples; not equal to wall-clock)
+
+Human: Search as `realm-admin`, note wall-clock ms on the results line; Dashboard **Avg OpenSearch query time (last 24 hours)** should be a number and typically **different from** that wall-clock. After flipping `search_mode=native_hybrid`, new samples are a single OS `took` with no further code change.
+
+---
+
+## Remaining follow-on
 
 | Next | Needs from 13 |
 | --- | --- |

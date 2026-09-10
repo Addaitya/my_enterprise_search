@@ -85,7 +85,7 @@ Realm role `admin` only (`AdminRoute`). Navbar **Dashboard** sits before Access 
 
 Six cards formatted from the API (placeholders are not hardcoded in React):
 
-- **Avg query time (last 24 hours)** — `null` → `—`
+- **Avg OpenSearch query time (last 24 hours)** — `null` → `—`
 - **Total data ingested** — bytes → B / KB / MB / GB
 - **Total no. of docs indexed** — locale integer
 - **Active connectors** / **Ingestion rate** / **Last sync** — API values (`12,400 docs/hr`; last sync string as-is)

@@ -137,11 +137,11 @@ Navbar (realm `admin` only): Search | Upload | View files | **Dashboard** | **Ac
 
 | Page | Path | What it does |
 | --- | --- | --- |
-| **Dashboard** | `/dashboard` | Six cards from `GET /admin/stats`. Live: avg query time (**last 24 hours** of successful `POST /search`; `—` if none), MinIO bucket size, `COUNT(*)` of `files`. Placeholders until the connector pipeline: active connectors `8`, ingest rate `12,400 docs/hr`, last sync `"2 min ago"`. MinIO list failure → **502**. |
+| **Dashboard** | `/dashboard` | Six cards from `GET /admin/stats`. Live: avg **OpenSearch** query time (**last 24 hours** of successful `POST /search`; `—` if none), MinIO bucket size, `COUNT(*)` of `files`. Placeholders until the connector pipeline: active connectors `8`, ingest rate `12,400 docs/hr`, last sync `"2 min ago"`. MinIO list failure → **502**. |
 | **Access Control(Admin)** | `/admin` | Identity + file ACL (tabs unchanged). Label only — URL, `Admin.tsx`, and `/admin/*` APIs stay. |
 | **Configuration** | `/configuration` | Body text `this is configuration.` (no settings API yet). |
 
-Successful searches persist `took_ms` (no query text) into `search_query_metrics`. Migrate with `uv run alembic upgrade head` (`c3d4e5f6a7b8`). Proof: `uv run python -m scripts.admin_stats_proof`.
+Successful searches persist OpenSearch `took` (no query text) into `search_query_metrics` — client_hybrid stores match+neural; native_hybrid stores the single query. API `took_ms` stays wall-clock. Migrate with `uv run alembic upgrade head` (`c3d4e5f6a7b8`). Proof: `uv run python -m scripts.admin_stats_proof`.
 
 ### Admin file access + members
 
@@ -175,7 +175,7 @@ File A gets role `search-user` viewer; file B gets group `engineering` viewer (a
 | `files` | File metadata only (`object_store_path`, `file_type`, `size_bytes`, `ingestion_type`, `original_source`, timestamps). No chunks, filename, or uploader. |
 | `file_acl` | One principal per row (`user_id` **or** `role_id` **or** `group_id`). Permission `viewer` \| `editor`. v1 product grants target roles and groups; `user_id` is reserved for later connectors. |
 | `upload_sessions` | Resumable upload state (local staging path, bytes received, status). TTL 24h. |
-| `search_query_metrics` | Successful `POST /search` latency (`took_ms`, `created_at`). Unbounded; dashboard averages the last 24 hours. No query text. |
+| `search_query_metrics` | Successful `POST /search` OpenSearch `took` (`took_ms`, `created_at`). Unbounded; dashboard averages the last 24 hours. No query text. |
 
 A file with no role/group grant is not searchable or listable. There is no automatic ACL on upload.
 

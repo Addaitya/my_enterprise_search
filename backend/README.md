@@ -48,7 +48,7 @@ OpenAPI: http://localhost:8000/docs
 | `GET` | `/auth/me` | Bearer | Current user claims |
 | `GET` | `/auth/admin-ping` | Bearer + `admin` | Admin check |
 | `GET` | `/admin/stats` | Bearer + `admin` | Dashboard KPIs (see Admin stats) |
-| `POST` | `/search` | `search-user` \| `admin` | Client-hybrid search (user JWT → OpenSearch DLS); records `took_ms` after success |
+| `POST` | `/search` | `search-user` \| `admin` | Client-hybrid search (user JWT → OpenSearch DLS); records OpenSearch `took` after success |
 | `GET` | `/files` | `search-user` \| `admin` | ACL-filtered file list (Postgres `file_acl`) |
 | `GET` | `/files/{id}` | product user + ACL | File metadata |
 | `GET` | `/files/{id}/content` | product user + ACL | Stream original from MinIO |
@@ -92,18 +92,18 @@ Grants are **role/group** only (`viewer` \| `editor`). System / `_empty` → **4
 
 ### Admin stats (`GET /admin/stats`, `require_admin`)
 
-One DTO for the Dashboard. OpenSearch is **not** queried.
+One DTO for the Dashboard. OpenSearch is **not** queried at stats read time; avg samples were captured from each successful search response.
 
 | Field | Source |
 | --- | --- |
-| `avg_query_time_ms` | `AVG(took_ms)` on `search_query_metrics` where `created_at` is in the last 24 hours (`null` if empty) |
+| `avg_query_time_ms` | `AVG(took_ms)` on `search_query_metrics` where `created_at` is in the last 24 hours (`null` if empty). Stored value is OpenSearch `took` (sum of subqueries in client-hybrid), not FastAPI wall-clock. |
 | `total_data_ingested_bytes` | MinIO bucket `enterprise-search-files` recursive object-size sum (empty → `0`; list/sum failure → **502**) |
 | `total_docs_indexed` | `COUNT(*) FROM files` (files, not OpenSearch chunks) |
 | `active_connectors` | constant `8` (`placeholders.active_connectors: true`) |
 | `ingestion_rate_docs_per_hour` | constant `12400` |
 | `last_sync` | literal `"2 min ago"` (not a timestamp) |
 
-Unauthenticated → **401**; non-admin → **403**. Successful `POST /search` enqueues `record_search_metric(took_ms)` via `BackgroundTasks` (no query text; failures are not stored). Table is unbounded; the average still filters last 24 hours.
+Unauthenticated → **401**; non-admin → **403**. Successful `POST /search` enqueues `record_search_metric(os_took_ms)` via `BackgroundTasks` (no query text; failures are not stored). `os_took_ms` is the OpenSearch response `took` (client_hybrid: match + neural; native_hybrid: one query). API `took_ms` stays wall-clock. Table is unbounded; the average still filters last 24 hours.
 
 Vite proxies `/api/*` to these paths (no `/api` prefix on FastAPI itself).
 
@@ -118,7 +118,7 @@ Default `search_mode=client_hybrid` (OpenSearch **3.8** workaround):
 3. Merge with min_max + arithmetic_mean weights `[0.3, 0.7]` in FastAPI.
 4. Strip `embedding` from `_source` and the response DTO.
 
-Hits are **chunk-grain** (snippet, `file_id`, `chunk_seq`, score, `display_name` = basename of `object_store_path`). OS failures → **502**; missing `opensearch_model_id` → **503**. Native `hybrid` + `search_pipeline` only when `search_mode=native_hybrid` after 3.9 proofs. After a successful search, `took_ms` is persisted in the background for the dashboard average.
+Hits are **chunk-grain** (snippet, `file_id`, `chunk_seq`, score, `display_name` = basename of `object_store_path`). OS failures → **502**; missing `opensearch_model_id` → **503**. Native `hybrid` + `search_pipeline` only when `search_mode=native_hybrid` after 3.9 proofs. After a successful search, OpenSearch `took` (`os_took_ms`) is persisted in the background for the dashboard average. Response `took_ms` remains wall-clock.
 
 ### View files / Open
 
