@@ -16,6 +16,10 @@ from minio.error import S3Error
 from app.core.config import Settings, get_settings
 
 
+class MinioStatsError(Exception):
+    """Listing or summing bucket objects failed (distinct from an empty bucket)."""
+
+
 def minio_client(settings: Settings | None = None) -> Minio:
     settings = settings or get_settings()
     return Minio(
@@ -87,3 +91,19 @@ class MinioStore:
         finally:
             response.close()
             response.release_conn()
+
+    def sum_object_sizes(self) -> int:
+        """Sum sizes of all objects in the product bucket (recursive). Empty → 0.
+
+        Connection / S3 / missing-bucket failures raise MinioStatsError so callers
+        can 502 instead of returning a fake 0.
+        """
+        try:
+            total = 0
+            for obj in self.client.list_objects(self.bucket, recursive=True):
+                total += obj.size or 0
+            return total
+        except S3Error as exc:
+            raise MinioStatsError(str(exc)) from exc
+        except Exception as exc:
+            raise MinioStatsError(str(exc)) from exc
