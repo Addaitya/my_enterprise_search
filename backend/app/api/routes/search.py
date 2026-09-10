@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 
 from app.api.deps import require_product_user, user_bearer_header
 from app.core.config import get_settings
@@ -14,6 +14,7 @@ from app.services.opensearch_search import (
     hit_to_dto,
     native_hybrid_search,
 )
+from app.services.search_metrics import record_search_metric
 
 router = APIRouter(tags=["search"])
 
@@ -22,6 +23,7 @@ router = APIRouter(tags=["search"])
 async def post_search(
     body: SearchRequest,
     request: Request,
+    background: BackgroundTasks,
     _user: CurrentUser = Depends(require_product_user),
 ) -> SearchResponse:
     q = body.q.strip()
@@ -62,4 +64,5 @@ async def post_search(
         SearchHit.model_validate(hit_to_dto(h, snippet_chars=settings.search_snippet_chars))
         for h in result.hits
     ]
+    background.add_task(record_search_metric, result.took_ms)
     return SearchResponse(q=q, took_ms=result.took_ms, total=len(hits), hits=hits)
