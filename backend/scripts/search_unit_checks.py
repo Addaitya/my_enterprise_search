@@ -111,6 +111,16 @@ def test_hit_to_dto_strips_embedding() -> None:
     assert dto["snippet"].endswith("…")
 
 
+def test_payload_took() -> None:
+    from app.services.opensearch_search import _payload_took
+
+    assert _payload_took({"took": 12}) == 12
+    assert _payload_took({"took": 12.9}) == 12
+    assert _payload_took({}) == 0
+    assert _payload_took({"took": None}) == 0
+    assert _payload_took({"took": "nope"}) == 0
+
+
 def main() -> None:
     test_settings_defaults()
     print("[ok] settings defaults")
@@ -125,6 +135,8 @@ def main() -> None:
     print("[ok] merge_hybrid_scores")
     test_hit_to_dto_strips_embedding()
     print("[ok] hit_to_dto")
+    test_payload_took()
+    print("[ok] _payload_took")
     print("all search unit checks passed")
 
 

@@ -1,4 +1,8 @@
-"""Assemble admin dashboard stats. OpenSearch is not queried."""
+"""Assemble admin dashboard stats. OpenSearch is not queried at read time.
+
+Avg query time is mean OpenSearch ``took`` samples already stored in Postgres
+(client_hybrid = match + neural; native_hybrid = one query).
+"""
 
 from __future__ import annotations
 

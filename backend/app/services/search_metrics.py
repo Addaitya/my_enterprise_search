@@ -1,4 +1,4 @@
-"""Persist successful POST /search latency without blocking the response."""
+"""Persist successful POST /search OpenSearch ``took`` without blocking the response."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 
 def record_search_metric(took_ms: int) -> None:
-    """Insert one latency row. Opens its own session (safe for BackgroundTasks)."""
+    """Insert one OpenSearch ``took`` sample. Own session (safe for BackgroundTasks)."""
     try:
         engine = get_engine()
         with Session(bind=engine) as db:

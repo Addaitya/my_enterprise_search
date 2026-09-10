@@ -57,7 +57,7 @@ export function Dashboard() {
   const cards: Card[] = stats
     ? [
         {
-          title: 'Avg query time (last 24 hours)',
+          title: 'Avg OpenSearch query time (last 24 hours)',
           value: formatAvgMs(stats.avg_query_time_ms),
         },
         {

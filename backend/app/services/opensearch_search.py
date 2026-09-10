@@ -46,7 +46,8 @@ class MergedHit:
 @dataclass
 class SearchResult:
     hits: list[MergedHit] = field(default_factory=list)
-    took_ms: int = 0
+    took_ms: int = 0  # FastAPI wall-clock around hybrid (Search UI)
+    os_took_ms: int = 0  # OpenSearch ``took`` sum/single (dashboard)
 
 
 def min_max_normalize(scores: list[float]) -> list[float]:
@@ -212,6 +213,15 @@ def _parse_hits(payload: dict[str, Any]) -> list[RawHit]:
     return out
 
 
+def _payload_took(payload: dict[str, Any]) -> int:
+    """OpenSearch search-response ``took`` (cluster query ms). Missing/invalid → 0."""
+    raw = payload.get("took")
+    try:
+        return int(raw) if raw is not None else 0
+    except (TypeError, ValueError):
+        return 0
+
+
 async def _os_search(
     body: dict[str, Any],
     headers: dict[str, str],
@@ -248,10 +258,10 @@ async def search_match(
     headers: dict[str, str],
     *,
     settings: Settings | None = None,
-) -> list[RawHit]:
+) -> tuple[list[RawHit], int]:
     settings = settings or get_settings()
     payload = await _os_search(match_body(q, size), headers, settings, label="match")
-    return _parse_hits(payload)
+    return _parse_hits(payload), _payload_took(payload)
 
 
 async def search_neural(
@@ -261,11 +271,11 @@ async def search_neural(
     model_id: str,
     *,
     settings: Settings | None = None,
-) -> list[RawHit]:
+) -> tuple[list[RawHit], int]:
     settings = settings or get_settings()
     body = neural_body(q, size, model_id, k=settings.search_neural_k)
     payload = await _os_search(body, headers, settings, label="neural")
-    return _parse_hits(payload)
+    return _parse_hits(payload), _payload_took(payload)
 
 
 async def client_hybrid_search(
@@ -282,7 +292,7 @@ async def client_hybrid_search(
 
     fetch = min(settings.search_max_fetch, size * settings.search_fetch_multiplier)
     started = time.perf_counter()
-    kw_hits, nn_hits = await asyncio.gather(
+    (kw_hits, kw_took), (nn_hits, nn_took) = await asyncio.gather(
         search_match(q, fetch, headers, settings=settings),
         search_neural(q, fetch, headers, model_id, settings=settings),
     )
@@ -294,7 +304,7 @@ async def client_hybrid_search(
         size=size,
     )
     took_ms = int((time.perf_counter() - started) * 1000)
-    return SearchResult(hits=ranked, took_ms=took_ms)
+    return SearchResult(hits=ranked, took_ms=took_ms, os_took_ms=kw_took + nn_took)
 
 
 async def native_hybrid_search(
@@ -325,4 +335,4 @@ async def native_hybrid_search(
         for h in raw
     ]
     took_ms = int((time.perf_counter() - started) * 1000)
-    return SearchResult(hits=ranked, took_ms=took_ms)
+    return SearchResult(hits=ranked, took_ms=took_ms, os_took_ms=_payload_took(payload))

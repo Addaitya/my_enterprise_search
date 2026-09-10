@@ -1,4 +1,4 @@
-"""Successful search latency samples (dashboard avg query time)."""
+"""Successful OpenSearch query-time samples (dashboard avg query time)."""
 
 from __future__ import annotations
 
@@ -13,7 +13,10 @@ from app.db.base import Base
 
 
 class SearchQueryMetric(Base):
-    """Wall-clock took_ms from a completed POST /search. No query text."""
+    """OpenSearch ``took`` (ms) from a completed POST /search. No query text.
+
+    client_hybrid: match.took + neural.took. native_hybrid: the single query took.
+    """
 
     __tablename__ = "search_query_metrics"
 

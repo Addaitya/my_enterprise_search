@@ -163,7 +163,7 @@ def main() -> int:
     avg = r.json().get("avg_query_time_ms")
     _assert(avg is not None, f"proof4 avg still null {r.json()}")
     _assert(isinstance(avg, (int, float)), f"proof4 avg type {avg!r}")
-    print(f"[ok] 4: POST /search took_ms={took_ms} then avg_query_time_ms={avg}")
+    print(f"[ok] 4: POST /search wall-clock took_ms={took_ms} then avg_query_time_ms={avg} (OpenSearch took; may differ from API took_ms)")
 
     print("=== all admin stats proofs passed ===")
     return 0

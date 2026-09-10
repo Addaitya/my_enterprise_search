@@ -64,5 +64,5 @@ async def post_search(
         SearchHit.model_validate(hit_to_dto(h, snippet_chars=settings.search_snippet_chars))
         for h in result.hits
     ]
-    background.add_task(record_search_metric, result.took_ms)
+    background.add_task(record_search_metric, result.os_took_ms)
     return SearchResponse(q=q, took_ms=result.took_ms, total=len(hits), hits=hits)
