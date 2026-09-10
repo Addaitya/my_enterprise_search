@@ -68,7 +68,7 @@ export function Admin() {
       <section className="space-y-6">
         <div className="flex flex-wrap items-baseline justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-semibold text-white">Admin</h1>
+            <h1 className="text-2xl font-semibold text-white">Access Control(Admin)</h1>
             <p className="mt-1 text-slate-400">
               Manage users, roles, groups, and file access (Keycloak + Postgres + OpenSearch sync).
             </p>

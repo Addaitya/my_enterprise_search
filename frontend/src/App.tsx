@@ -6,6 +6,8 @@ import { Callback } from './auth/callback'
 import { ProtectedRoute } from './auth/ProtectedRoute'
 import { SilentCallback } from './auth/silentCallback'
 import { Admin } from './pages/Admin'
+import { Configuration } from './pages/Configuration'
+import { Dashboard } from './pages/Dashboard'
 import { Files } from './pages/Files'
 import { Login } from './pages/Login'
 import { Search } from './pages/Search'
@@ -48,6 +50,22 @@ function App() {
             element={
               <AdminRoute>
                 <Admin />
+              </AdminRoute>
+            }
+          />
+          <Route
+            path="/dashboard"
+            element={
+              <AdminRoute>
+                <Dashboard />
+              </AdminRoute>
+            }
+          />
+          <Route
+            path="/configuration"
+            element={
+              <AdminRoute>
+                <Configuration />
               </AdminRoute>
             }
           />

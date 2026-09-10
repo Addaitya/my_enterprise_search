@@ -20,7 +20,13 @@ export function Navbar() {
         <Link to="/">Search</Link>
         <Link to="/upload">Upload</Link>
         <Link to="/files">View files</Link>
-        {isAdmin ? <Link to="/admin">Admin</Link> : null}
+        {isAdmin ? (
+          <>
+            <Link to="/dashboard">Dashboard</Link>
+            <Link to="/admin">Access Control(Admin)</Link>
+            <Link to="/configuration">Configuration</Link>
+          </>
+        ) : null}
         {signedIn ? (
           <>
             <span className="text-slate-500">{username}</span>
