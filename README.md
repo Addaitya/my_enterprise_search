@@ -2,9 +2,9 @@
 
 Company-internal hybrid search (keyword + semantic) over uploaded files, with role- and group-based access control. v1 accepts local **PDF / TXT / CSV** uploads.
 
-**Now:** Compose stack, Keycloak PKCE login, FastAPI JWT, OpenSearch 3.8 JWKS + `files_searcher` DLS, Postgres identity mirror + `files` / `file_acl` / `upload_sessions`, resumable ingest API, React multi-file `/upload`, **client-hybrid `POST /search`**, ACL-filtered **View files** + **Open** (MinIO stream), Admin **Users / Roles / Groups / Access** (identity CRUD, bulk file grants, role/group members, OpenSearch ACL sync jobs).
+**Now:** Compose stack, Keycloak PKCE login, FastAPI JWT, OpenSearch 3.8 JWKS + `files_searcher` DLS, Postgres identity mirror + `files` / `file_acl` / `upload_sessions` / `search_query_metrics`, resumable ingest API, React multi-file `/upload`, **client-hybrid `POST /search`**, ACL-filtered **View files** + **Open** (MinIO stream), admin **Dashboard** (live stats + placeholders), **Access Control(Admin)** (Users / Roles / Groups / Access), **Configuration** placeholder.
 
-**Not yet:** Check-access explorer / audit CSV, Task 7 SKIP LOCKED + dual-write repair, native OpenSearch `hybrid`+DLS (needs 3.9+; product path uses client-side merge on 3.8).
+**Not yet:** Check-access explorer / audit CSV, Task 7 SKIP LOCKED + dual-write repair, native OpenSearch `hybrid`+DLS (needs 3.9+; product path uses client-side merge on 3.8), connector ingestion pipeline (dashboard connector / rate / last-sync stay API placeholders).
 
 ## Stack
 
@@ -102,9 +102,11 @@ Vite proxies `/api` → FastAPI. Sign in, then:
 - **Upload** (`/upload`) — PDF/TXT/CSV (25 MiB max each)
 - **Search** (`/`) — hybrid search + Open download
 - **View files** (`/files`) — ACL-filtered list + Open
-- **Admin** (`/admin`, realm `admin`) — Users / Roles / Groups / Access (file grants + members)
+- **Dashboard** (`/dashboard`, realm `admin`) — six KPIs from `GET /admin/stats`
+- **Access Control(Admin)** (`/admin`, realm `admin`) — Users / Roles / Groups / Access (file grants + members)
+- **Configuration** (`/configuration`, realm `admin`) — placeholder copy
 
-`GET /health` is public. Product routes (`/auth/me`, `/search`, `/files*`, `/files/uploads*`) require a Bearer token. Admin identity/ACL routes require realm role `admin`.
+`GET /health` is public. Product routes (`/auth/me`, `/search`, `/files*`, `/files/uploads*`) require a Bearer token. Admin identity/ACL routes and `GET /admin/stats` require realm role `admin`.
 
 OpenSearch verifies JWTs via Keycloak JWKS (`http://keycloak:8080/.../certs` from inside the container). Token `iss` stays `http://localhost:8080/realms/enterprise-search-realm`.
 
@@ -128,6 +130,18 @@ cd backend && uv run python -m init_services
 SPA client: `web-client`. API and OpenSearch audience: `api-client`.
 
 After a successful mirror you should see seed users plus Keycloak built-ins and the `api-client` service account (typically users=3, roles=5, groups=`engineering` + `_empty`).
+
+### Admin Dashboard, Access Control, Configuration
+
+Navbar (realm `admin` only): Search | Upload | View files | **Dashboard** | **Access Control(Admin)** | **Configuration**. Non-admin users do not see those three links; deep-links show Forbidden.
+
+| Page | Path | What it does |
+| --- | --- | --- |
+| **Dashboard** | `/dashboard` | Six cards from `GET /admin/stats`. Live: avg query time (**last 24 hours** of successful `POST /search`; `—` if none), MinIO bucket size, `COUNT(*)` of `files`. Placeholders until the connector pipeline: active connectors `8`, ingest rate `12,400 docs/hr`, last sync `"2 min ago"`. MinIO list failure → **502**. |
+| **Access Control(Admin)** | `/admin` | Identity + file ACL (tabs unchanged). Label only — URL, `Admin.tsx`, and `/admin/*` APIs stay. |
+| **Configuration** | `/configuration` | Body text `this is configuration.` (no settings API yet). |
+
+Successful searches persist `took_ms` (no query text) into `search_query_metrics`. Migrate with `uv run alembic upgrade head` (`c3d4e5f6a7b8`). Proof: `uv run python -m scripts.admin_stats_proof`.
 
 ### Admin file access + members
 
@@ -161,12 +175,13 @@ File A gets role `search-user` viewer; file B gets group `engineering` viewer (a
 | `files` | File metadata only (`object_store_path`, `file_type`, `size_bytes`, `ingestion_type`, `original_source`, timestamps). No chunks, filename, or uploader. |
 | `file_acl` | One principal per row (`user_id` **or** `role_id` **or** `group_id`). Permission `viewer` \| `editor`. v1 product grants target roles and groups; `user_id` is reserved for later connectors. |
 | `upload_sessions` | Resumable upload state (local staging path, bytes received, status). TTL 24h. |
+| `search_query_metrics` | Successful `POST /search` latency (`took_ms`, `created_at`). Unbounded; dashboard averages the last 24 hours. No query text. |
 
 A file with no role/group grant is not searchable or listable. There is no automatic ACL on upload.
 
 ## Package docs
 
-- [backend/README.md](backend/README.md) — API (incl. `/admin/*`), ingest, search, `init_services`, proofs
+- [backend/README.md](backend/README.md) — API (incl. `/admin/*` + `/admin/stats`), ingest, search, `init_services`, proofs
 - [frontend/README.md](frontend/README.md) — SPA routes, auth, search/files/upload/admin clients
 
 ## Repo layout

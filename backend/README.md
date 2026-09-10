@@ -1,6 +1,6 @@
 # Backend
 
-FastAPI service for Enterprise Search: JWT auth against Keycloak, Postgres identity/files metadata + ACL, resumable local ingest into MinIO + OpenSearch, **client-hybrid search**, file list/open streams, **admin identity + file ACL** (bulk grants, members, sync jobs), and bootstrap via `init_services`.
+FastAPI service for Enterprise Search: JWT auth against Keycloak, Postgres identity/files metadata + ACL, resumable local ingest into MinIO + OpenSearch, **client-hybrid search**, file list/open streams, **admin identity + file ACL** (bulk grants, members, sync jobs), **admin dashboard stats**, and bootstrap via `init_services`.
 
 Managed with [uv](https://docs.astral.sh/uv/). Python **3.12+**.
 
@@ -8,10 +8,10 @@ Managed with [uv](https://docs.astral.sh/uv/). Python **3.12+**.
 
 ```
 app/
-  api/routes/     health, auth, files, search, admin_identity, admin_acl
+  api/routes/     health, auth, files, search, admin_identity, admin_acl, admin_stats
   core/           settings, JWT verification
-  models/         identity, files, file_acl, upload_sessions, acl_sync_jobs
-  services/       file_access, file_acl_admin, acl_sync, identity_admin, keycloak_admin, opensearch_search, upload, …
+  models/         identity, files, file_acl, upload_sessions, acl_sync_jobs, search_metrics
+  services/       file_access, file_acl_admin, acl_sync, identity_admin, keycloak_admin, opensearch_search, upload, admin_stats, search_metrics, …
   schemas/        request/response models (files, search, uploads, admin_*)
 alembic/          migrations (run manually; not part of init_services)
 init_services/    Keycloak, identity mirror, OpenSearch security/ML/index, MinIO bucket
@@ -47,7 +47,8 @@ OpenAPI: http://localhost:8000/docs
 | `GET` | `/health` | public | Liveness |
 | `GET` | `/auth/me` | Bearer | Current user claims |
 | `GET` | `/auth/admin-ping` | Bearer + `admin` | Admin check |
-| `POST` | `/search` | `search-user` \| `admin` | Client-hybrid search (user JWT → OpenSearch DLS) |
+| `GET` | `/admin/stats` | Bearer + `admin` | Dashboard KPIs (see Admin stats) |
+| `POST` | `/search` | `search-user` \| `admin` | Client-hybrid search (user JWT → OpenSearch DLS); records `took_ms` after success |
 | `GET` | `/files` | `search-user` \| `admin` | ACL-filtered file list (Postgres `file_acl`) |
 | `GET` | `/files/{id}` | product user + ACL | File metadata |
 | `GET` | `/files/{id}/content` | product user + ACL | Stream original from MinIO |
@@ -89,6 +90,21 @@ Member mutations return `results[]` + `failed[]` (HTTP 200 on partial success). 
 
 Grants are **role/group** only (`viewer` \| `editor`). System / `_empty` → **400**. Bulk `replace` needs `confirm_replace: true`. Flow: mutate Postgres → enqueue `acl_sync_jobs` → worker updates OpenSearch `allowed_*`.
 
+### Admin stats (`GET /admin/stats`, `require_admin`)
+
+One DTO for the Dashboard. OpenSearch is **not** queried.
+
+| Field | Source |
+| --- | --- |
+| `avg_query_time_ms` | `AVG(took_ms)` on `search_query_metrics` where `created_at` is in the last 24 hours (`null` if empty) |
+| `total_data_ingested_bytes` | MinIO bucket `enterprise-search-files` recursive object-size sum (empty → `0`; list/sum failure → **502**) |
+| `total_docs_indexed` | `COUNT(*) FROM files` (files, not OpenSearch chunks) |
+| `active_connectors` | constant `8` (`placeholders.active_connectors: true`) |
+| `ingestion_rate_docs_per_hour` | constant `12400` |
+| `last_sync` | literal `"2 min ago"` (not a timestamp) |
+
+Unauthenticated → **401**; non-admin → **403**. Successful `POST /search` enqueues `record_search_metric(took_ms)` via `BackgroundTasks` (no query text; failures are not stored). Table is unbounded; the average still filters last 24 hours.
+
 Vite proxies `/api/*` to these paths (no `/api` prefix on FastAPI itself).
 
 ### Search (`POST /search`)
@@ -102,7 +118,7 @@ Default `search_mode=client_hybrid` (OpenSearch **3.8** workaround):
 3. Merge with min_max + arithmetic_mean weights `[0.3, 0.7]` in FastAPI.
 4. Strip `embedding` from `_source` and the response DTO.
 
-Hits are **chunk-grain** (snippet, `file_id`, `chunk_seq`, score, `display_name` = basename of `object_store_path`). OS failures → **502**; missing `opensearch_model_id` → **503**. Native `hybrid` + `search_pipeline` only when `search_mode=native_hybrid` after 3.9 proofs.
+Hits are **chunk-grain** (snippet, `file_id`, `chunk_seq`, score, `display_name` = basename of `object_store_path`). OS failures → **502**; missing `opensearch_model_id` → **503**. Native `hybrid` + `search_pipeline` only when `search_mode=native_hybrid` after 3.9 proofs. After a successful search, `took_ms` is persisted in the background for the dashboard average.
 
 ### View files / Open
 
@@ -150,6 +166,7 @@ uv run python -m scripts.admin_identity_proof    # identity CRUD
 uv run python -m scripts.admin_acl_proof         # single-file ACL + sync jobs
 uv run python -m scripts.admin_file_access_proof # bulk ACL + file-grants filters
 uv run python -m scripts.admin_member_assignment_proof  # role/group members
+uv run python -m scripts.admin_stats_proof       # /admin/stats 401/403/200 + search avg
 ```
 
 `seed_file_acl_for_proofs` grants role `search-user` on file A and group `engineering` on file B (idempotent; never `_empty`), then `update_by_query` copies names into chunk `allowed_*`.

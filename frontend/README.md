@@ -1,6 +1,6 @@
 # Frontend
 
-React SPA for Enterprise Search: Keycloak PKCE login, protected routes, hybrid search, ACL-filtered file list/download, Drive-style multi-file upload, and an **Admin** console (Users / Roles / Groups / Access) against the FastAPI API.
+React SPA for Enterprise Search: Keycloak PKCE login, protected routes, hybrid search, ACL-filtered file list/download, Drive-style multi-file upload, and admin **Dashboard** / **Access Control(Admin)** / **Configuration** against the FastAPI API.
 
 Stack: **React 19**, **Vite 8**, **TypeScript**, **Tailwind 4**, **Zustand**, **oidc-client-ts**, package manager **bun**.
 
@@ -41,7 +41,9 @@ From the repo root you can also run API + UI together:
 | `/` | signed-in | Hybrid search + results + Open download |
 | `/upload` | signed-in (`search-user` \| `admin`) | Multi-file resumable upload |
 | `/files` | signed-in | ACL-filtered file list + Open |
-| `/admin` | realm role `admin` | Users / Roles / Groups / Access |
+| `/dashboard` | realm role `admin` | Six KPI cards from `GET /admin/stats` |
+| `/admin` | realm role `admin` | Access Control(Admin): Users / Roles / Groups / Access |
+| `/configuration` | realm role `admin` | Placeholder `this is configuration.` |
 
 ## Search (`/`)
 
@@ -77,9 +79,22 @@ Client modules:
 - `src/api/uploads.ts` — validation + `resumableUpload` (XHR for parts)
 - `src/pages/Upload.tsx` — UI
 
-## Admin (`/admin`)
+## Dashboard (`/dashboard`)
 
-Realm role `admin` only. Shell: `src/pages/Admin.tsx`. Panels under `src/pages/admin/`; shared widgets in `src/components/admin/`. API: `src/api/admin.ts`.
+Realm role `admin` only (`AdminRoute`). Navbar **Dashboard** sits before Access Control(Admin). Client: `src/api/stats.ts` (`getAdminStats()`), page `src/pages/Dashboard.tsx`.
+
+Six cards formatted from the API (placeholders are not hardcoded in React):
+
+- **Avg query time (last 24 hours)** — `null` → `—`
+- **Total data ingested** — bytes → B / KB / MB / GB
+- **Total no. of docs indexed** — locale integer
+- **Active connectors** / **Ingestion rate** / **Last sync** — API values (`12,400 docs/hr`; last sync string as-is)
+
+Refresh reloads `GET /admin/stats`. MinIO failure surfaces as the API **502**.
+
+## Access Control(Admin) (`/admin`)
+
+Realm role `admin` only. Navbar label and page h1 are **Access Control(Admin)**; URL stays `/admin`. Shell: `src/pages/Admin.tsx`. Panels under `src/pages/admin/`; shared widgets in `src/components/admin/`. API: `src/api/admin.ts`.
 
 | Tab | Capabilities |
 | --- | --- |
@@ -89,6 +104,12 @@ Realm role `admin` only. Shell: `src/pages/Admin.tsx`. Panels under `src/pages/a
 | **Access** | File table (search, has-access filter); Manage access drawer (PUT replace-all); multi-select Grant/Revoke; job tray |
 
 Copy uses “access” / “role or group” (not ACL/principal). After membership changes, UI notes that users must **re-login** before search JWT updates. File grants: Viewer/Editor; bulk default upsert; replace needs confirmation.
+
+## Configuration (`/configuration`)
+
+Realm role `admin` only. Body is exactly `this is configuration.` No settings API yet. Client: `src/pages/Configuration.tsx`.
+
+Admin navbar order after View files: **Dashboard** | **Access Control(Admin)** | **Configuration**. Non-admin users do not get those links; visiting the routes shows Forbidden.
 
 ## Scripts
 
