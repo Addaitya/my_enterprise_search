@@ -11,13 +11,23 @@
 from __future__ import annotations
 
 import csv
+import sys
 from io import StringIO
 
 from app.services.ingest.chunker import chunk_text, estimate_tokens
 
+# Allow a single CSV cell larger than ~512 MiB. Process-global; raise only.
+_MIN_CSV_FIELD = 512 * 1024 * 1024 + 1
+
 
 class CsvExtractError(ValueError):
-    """Raised for bad encoding, missing header, or zero data rows."""
+    """Raised for bad encoding, missing header, parse errors, or zero data rows."""
+
+
+def ensure_csv_field_size_limit() -> None:
+    """Raise CPython's csv field limit so huge cells can be parsed (S8)."""
+    if csv.field_size_limit() < _MIN_CSV_FIELD:
+        csv.field_size_limit(sys.maxsize)
 
 
 def serialize_row(row: dict[str, str | None]) -> str:
@@ -44,6 +54,7 @@ def extract_csv_units(
     Most units are already ≤ chunk_tokens (packed groups). Oversized single
     rows are pre-split by the overlapping chunker.
     """
+    ensure_csv_field_size_limit()
     try:
         text = data.decode("utf-8")
     except UnicodeDecodeError as exc:
@@ -53,7 +64,10 @@ def extract_csv_units(
     if not reader.fieldnames:
         raise CsvExtractError("CSV requires a header row")
 
-    rows = list(reader)
+    try:
+        rows = list(reader)
+    except csv.Error as exc:
+        raise CsvExtractError(f"CSV parse error: {exc}") from exc
     if not rows:
         raise CsvExtractError("CSV has zero data rows")
 

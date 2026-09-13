@@ -5,6 +5,8 @@ Run: ``cd backend && uv run python -m scripts.ingest_unit_checks``
 
 from __future__ import annotations
 
+import csv
+
 from app.services.ingest.chunker import chunk_text, estimate_tokens
 from app.services.ingest.csv_extract import extract_csv_units, serialize_row
 
@@ -43,6 +45,15 @@ def test_serialize_skips_empty() -> None:
     assert text == "From: a@co\nBody: Hi"
 
 
+def test_csv_cell_over_default_field_limit() -> None:
+    """Proof 9: a cell > 128 KiB must parse and split; field limit ≥ 512 MiB + 1."""
+    body = "x" * 200_000
+    csv_data = f"From,To,Subject,Body\na@co,b@co,Reset,{body}\n".encode("utf-8")
+    units = extract_csv_units(csv_data, chunk_tokens=600, overlap_tokens=75)
+    assert len(units) > 1
+    assert csv.field_size_limit() >= 512 * 1024 * 1024 + 1
+
+
 def main() -> None:
     test_estimate_and_chunk()
     print("[ok] chunker")
@@ -52,6 +63,8 @@ def main() -> None:
     print("[ok] csv oversized row splits")
     test_serialize_skips_empty()
     print("[ok] serialize")
+    test_csv_cell_over_default_field_limit()
+    print("[ok] csv cell > 128 KiB parses and chunks")
     print("all unit checks passed")
 
 
