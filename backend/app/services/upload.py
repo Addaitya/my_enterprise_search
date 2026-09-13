@@ -11,15 +11,15 @@ from sqlalchemy.orm import Session
 from app.core.config import Settings, get_settings
 from app.models.file import File
 from app.models.upload_session import UploadSession
-from app.services.ingest import IngestParseError, build_content_chunks
+from app.services.ingest import IngestParseError
 from app.services.ingest.detect import detect_file_type, safe_filename
-from app.services.local_staging import LocalStaging
-from app.services.minio_store import MinioStore, final_object_path
-from app.services.opensearch_ingest import (
-    build_chunk_document,
-    bulk_index_chunks,
-    delete_chunks_by_file_id,
+from app.services.ingest.local_file import (
+    LocalIngestResult,
+    compensate_local_ingest,
+    ingest_local_bytes,
 )
+from app.services.local_staging import LocalStaging
+from app.services.minio_store import MinioStore
 
 _CONTENT_RANGE_PUT_RE = re.compile(
     r"^bytes\s+(\d+)-(\d+)/(\d+)$",
@@ -195,11 +195,8 @@ class UploadService:
         session.updated_at = _utcnow()
         self.db.commit()
 
-        file_id = uuid.uuid4()
-        object_path = final_object_path(str(file_id), session.safe_filename)
-        file_row: File | None = None
-        indexed = False
-        minio_written = False
+        session_id = session.id
+        result: LocalIngestResult | None = None
 
         try:
             data = self.staging.read_bytes(str(session.id))
@@ -208,50 +205,23 @@ class UploadService:
                     f"staging size mismatch: got {len(data)}, expected {session.size_bytes}"
                 )
 
-            chunks = build_content_chunks(
-                file_type=session.file_type,
+            result = ingest_local_bytes(
+                self.db,
                 data=data,
-                chunk_tokens=self.settings.ingest_chunk_tokens,
-                overlap_tokens=self.settings.ingest_chunk_overlap_tokens,
-            )
-
-            # Single full-object put — no MinIO multipart / ranged upload.
-            self.store.put_object(object_path, data)
-            minio_written = True
-
-            now = _utcnow()
-            file_row = File(
-                id=file_id,
-                object_store_path=object_path,
-                file_type=session.file_type,
-                size_bytes=session.size_bytes,
-                ingestion_type="local",
+                filename=session.safe_filename,
                 original_source=None,
-                uploaded_at=now,
-                updated_at=now,
+                settings=self.settings,
+                store=self.store,
             )
-            self.db.add(file_row)
-            self.db.flush()
 
-            iso = now.isoformat()
-            docs = [
-                build_chunk_document(
-                    file_id=file_id,
-                    chunk_seq=seq,
-                    content=content,
-                    file_type=session.file_type,
-                    size_bytes=session.size_bytes,
-                    object_store_path=object_path,
-                    uploaded_at=iso,
-                    updated_at=iso,
-                )
-                for seq, content in enumerate(chunks)
-            ]
-            bulk_index_chunks(docs, settings=self.settings)
-            indexed = True
+            file_row = self.db.get(File, result.file_id)
+            if file_row is None:
+                raise RuntimeError("ingest missing files row")
 
-            session.file_id = file_id
-            session.chunk_count = len(chunks)
+            session = self.db.get(UploadSession, session_id)
+            assert session is not None
+            session.file_id = result.file_id
+            session.chunk_count = result.chunk_count
             session.status = "completed"
             session.updated_at = _utcnow()
             self.db.commit()
@@ -266,14 +236,20 @@ class UploadService:
             return session, file_row
 
         except IngestParseError as exc:
-            self._compensate(
-                session, file_id, object_path, file_row, indexed, minio_written, str(exc)
-            )
+            self._fail_session(session_id, str(exc))
             raise UploadServiceError(422, str(exc)) from exc
         except Exception as exc:  # noqa: BLE001
-            self._compensate(
-                session, file_id, object_path, file_row, indexed, minio_written, str(exc)
-            )
+            if result is not None:
+                compensate_local_ingest(
+                    self.db,
+                    file_id=result.file_id,
+                    object_store_path=result.object_store_path,
+                    indexed=True,
+                    minio_written=True,
+                    store=self.store,
+                    settings=self.settings,
+                )
+            self._fail_session(session_id, str(exc))
             raise UploadServiceError(502, f"ingest failed: {exc}") from exc
 
     def cancel(self, *, upload_id: uuid.UUID, user_sub: str) -> UploadSession:
@@ -292,36 +268,15 @@ class UploadService:
         self.db.refresh(session)
         return session
 
-    def _compensate(
-        self,
-        session: UploadSession,
-        file_id: uuid.UUID,
-        object_path: str,
-        file_row: File | None,
-        indexed: bool,
-        minio_written: bool,
-        error: str,
-    ) -> None:
-        """C6: no orphan files/chunks/MinIO object; local staging kept for debug on failure."""
-        self.db.rollback()
-        session = self.db.get(UploadSession, session.id)
-        assert session is not None
-        if indexed:
-            try:
-                delete_chunks_by_file_id(file_id, settings=self.settings)
-            except Exception:  # noqa: BLE001
-                pass
-        if file_row is not None and file_row.id is not None:
-            existing = self.db.get(File, file_id)
-            if existing is not None:
-                self.db.delete(existing)
-                self.db.commit()
-        if minio_written:
-            try:
-                self.store.delete_object(object_path)
-            except Exception:  # noqa: BLE001
-                pass
+    def _fail_session(self, session_id: uuid.UUID, error: str) -> None:
+        """HTTP session C6: mark failed and keep local staging for debug.
 
+        Store compensation (MinIO / OS / ``files``) is owned by ``ingest_local_bytes``.
+        """
+        self.db.rollback()
+        session = self.db.get(UploadSession, session_id)
+        if session is None:
+            return
         session.status = "failed"
         session.error_message = error[:2000]
         session.file_id = None
