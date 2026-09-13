@@ -1,6 +1,6 @@
 # Frontend
 
-React SPA for Enterprise Search: Keycloak PKCE login, protected routes, hybrid search, ACL-filtered file list/download, Drive-style multi-file upload, and admin **Dashboard** / **Access Control(Admin)** / **Configuration** against the FastAPI API.
+React SPA for Enterprise Search: Keycloak PKCE login, protected routes, hybrid search, ACL-filtered file list/download, Drive-style multi-file upload (HTTP path unchanged), and admin **Dashboard** / **Access Control(Admin)** / **Configuration** against the FastAPI API. Folder ingest is a **backend CLI**, not a UI picker.
 
 Stack: **React 19**, **Vite 8**, **TypeScript**, **Tailwind 4**, **Zustand**, **oidc-client-ts**, package manager **bun**.
 
@@ -61,17 +61,19 @@ Fetches `GET /files` (Postgres ACL). Rows show basename `display_name`, short `f
 
 Client: `src/api/files.ts`, `src/pages/Files.tsx`.
 
-Uploaded files have **no ACL** until an admin grant or the backend seed script — the list can be empty after a fresh upload.
+Uploaded files and folder-CLI files have **no ACL** until an admin grant or the backend seed script — the list can be empty after a fresh ingest.
 
 ## Upload (`/upload`)
 
-Uses the backend resumable API (`initiate` → sequential **256 KiB** `Content-Range` PUTs → `complete`).
+Uses the backend resumable API (`initiate` → sequential **256 KiB** `Content-Range` PUTs → `complete`). This page is **unchanged** in the folder-ingest slice — no bulk-folder picker.
 
-- Accepts **PDF / TXT / CSV**, max **25 MiB** per file (client + server).
+- Accepts **PDF / TXT / CSV**, max **25 MiB** per file (client + server). The backend folder CLI is **not** capped at 25 MiB.
 - Multi-select; files upload **one after another** with per-file progress.
 - Cancel aborts the current session (`DELETE`) and stops the queue; retry starts a new session.
-- Success shows `file_id` + `chunk_count`. Uploaded files have **no ACL** yet — not searchable/listable until grants.
+- Success shows `file_id` + `chunk_count`. Uploaded files have **no ACL** yet — not searchable/listable until grants (same as files ingested with `uv run python -m scripts.ingest_folder`).
 - Range PUTs use **XHR** (not `fetch`) so Drive-style HTTP **308** Resume Incomplete is readable (fetch `redirect: 'manual'` becomes an opaque redirect).
+
+To ingest a directory tree without the browser, use the backend CLI (see [backend/README.md](../backend/README.md)); then grant ACL here on **Access Control(Admin)** so Search / View files can see the files.
 
 Client modules:
 
@@ -123,5 +125,5 @@ bun run lint      # oxlint
 ## Notes
 
 - Auth state: Zustand + `oidc-client-ts` (`web-client` PKCE).
-- See root [README.md](../README.md) for Compose, seed users (`realm-admin` / `searcher`), ACL seed, and backend bootstrap.
+- See root [README.md](../README.md) for Compose, seed users (`realm-admin` / `searcher`), ACL seed, folder ingest CLI, and backend bootstrap.
 - Backend details: [backend/README.md](../backend/README.md).

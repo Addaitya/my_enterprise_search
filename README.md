@@ -2,9 +2,9 @@
 
 Company-internal hybrid search (keyword + semantic) over uploaded files, with role- and group-based access control. v1 accepts local **PDF / TXT / CSV** uploads.
 
-**Now:** Compose stack, Keycloak PKCE login, FastAPI JWT, OpenSearch 3.8 JWKS + `files_searcher` DLS, Postgres identity mirror + `files` / `file_acl` / `upload_sessions` / `search_query_metrics`, resumable ingest API, React multi-file `/upload`, **client-hybrid `POST /search`**, ACL-filtered **View files** + **Open** (MinIO stream), admin **Dashboard** (live stats + placeholders), **Access Control(Admin)** (Users / Roles / Groups / Access), **Configuration** placeholder.
+**Now:** Compose stack, Keycloak PKCE login, FastAPI JWT, OpenSearch 3.8 JWKS + `files_searcher` DLS, Postgres identity mirror + `files` / `file_acl` / `upload_sessions` / `search_query_metrics`, resumable ingest API, **ops folder ingest CLI**, React multi-file `/upload`, **client-hybrid `POST /search`**, ACL-filtered **View files** + **Open** (MinIO stream), admin **Dashboard** (live stats + placeholders), **Access Control(Admin)** (Users / Roles / Groups / Access), **Configuration** placeholder.
 
-**Not yet:** Check-access explorer / audit CSV, Task 7 SKIP LOCKED + dual-write repair, native OpenSearch `hybrid`+DLS (needs 3.9+; product path uses client-side merge on 3.8), connector ingestion pipeline (dashboard connector / rate / last-sync stay API placeholders).
+**Not yet:** Check-access explorer / audit CSV, Task 7 SKIP LOCKED + dual-write repair, native OpenSearch `hybrid`+DLS (needs 3.9+; product path uses client-side merge on 3.8), connector ingestion pipeline (dashboard connector / rate / last-sync stay API placeholders), content-hash dedup, auto-ACL after ingest.
 
 ## Stack
 
@@ -16,7 +16,7 @@ Company-internal hybrid search (keyword + semantic) over uploaded files, with ro
 | Search | OpenSearch 3.8.0 (ML Commons MiniLM ONNX embeddings; JWT via Keycloak JWKS) |
 | Storage | PostgreSQL 16 (identity mirror, file metadata, ACL, upload sessions), MinIO (bytes) |
 
-Request auth stays on the **JWT**. Postgres identity is a one-way Keycloak projection. File ACL lives only in Postgres (`viewer` / `editor` on a role or group). Uploads index chunks with **empty** ACL — searchable / listable only after an admin grant (Access tab / bulk APIs) or the optional seed script. Admin is the Keycloak realm role `admin` (does **not** bypass file ACL).
+Request auth stays on the **JWT**. Postgres identity is a one-way Keycloak projection. File ACL lives only in Postgres (`viewer` / `editor` on a role or group). HTTP uploads and the folder CLI index chunks with **empty** ACL — searchable / listable only after an admin grant (Access tab / bulk APIs) or the optional seed script. Admin is the Keycloak realm role `admin` (does **not** bypass file ACL).
 
 ### Search on OpenSearch 3.8
 
@@ -99,14 +99,28 @@ cd frontend && bun run dev
 
 Vite proxies `/api` → FastAPI. Sign in, then:
 
-- **Upload** (`/upload`) — PDF/TXT/CSV (25 MiB max each)
+- **Upload** (`/upload`) — PDF/TXT/CSV (25 MiB max each); React is unchanged
+- **Folder ingest** (ops CLI, no JWT) — walk a directory of PDF/TXT/CSV into the same stores as HTTP complete (not 25 MiB-capped)
 - **Search** (`/`) — hybrid search + Open download
 - **View files** (`/files`) — ACL-filtered list + Open
 - **Dashboard** (`/dashboard`, realm `admin`) — six KPIs from `GET /admin/stats`
 - **Access Control(Admin)** (`/admin`, realm `admin`) — Users / Roles / Groups / Access (file grants + members)
 - **Configuration** (`/configuration`, realm `admin`) — placeholder copy
 
-`GET /health` is public. Product routes (`/auth/me`, `/search`, `/files*`, `/files/uploads*`) require a Bearer token. Admin identity/ACL routes and `GET /admin/stats` require realm role `admin`.
+`GET /health` is public. Product routes (`/auth/me`, `/search`, `/files*`, `/files/uploads*`) require a Bearer token. Admin identity/ACL routes and `GET /admin/stats` require realm role `admin`. The folder CLI talks to Postgres / MinIO / OpenSearch directly — no JWT and no `/files/uploads` session.
+
+### Folder ingest (ops CLI)
+
+Same bytes → MinIO + `files` + OpenSearch path as a successful `POST /files/uploads/.../complete`. No `file_acl`, no `upload_sessions`, no Keycloak. Nested folders are included; hidden path components (any segment starting with `.`) and non-pdf/txt/csv extensions are skipped. Re-running the same folder creates **new** `file_id`s (no dedup). `original_source` is the path relative to the folder root (POSIX), not an absolute host path. MinIO keys stay `local/{file_id}/{basename}` (no nested prefix).
+
+```bash
+cd backend
+uv run python -m scripts.ingest_folder /path/to/folder
+uv run python -m scripts.ingest_folder /path/to/folder --dry-run
+uv run python -m scripts.ingest_folder /path/to/folder --fail-fast
+```
+
+`--dry-run` classifies only (no store writes). Default continues after parse/infra failures; `--fail-fast` stops after the first attempted ingest failure. Exit **0** if every attempted ingest succeeded; **1** if the folder is missing or any attempted ingest failed. Files are not searchable until an admin grant on Access Control(Admin) → file access (same as `/upload`). Details and proofs: [backend/README.md](backend/README.md).
 
 OpenSearch verifies JWTs via Keycloak JWKS (`http://keycloak:8080/.../certs` from inside the container). Token `iss` stays `http://localhost:8080/realms/enterprise-search-realm`.
 
@@ -157,7 +171,7 @@ File grants target **roles/groups** only (Viewer/Editor). Membership changes: Ke
 
 ### Optional: ACL seed for list / search proofs
 
-Uploads have **no** `file_acl` until an admin grant. For local demos without the Access UI, seed one/two recent files:
+HTTP uploads and folder-CLI files have **no** `file_acl` until an admin grant. For local demos without the Access UI, seed one/two recent files:
 
 ```bash
 cd backend
@@ -177,17 +191,17 @@ File A gets role `search-user` viewer; file B gets group `engineering` viewer (a
 | `upload_sessions` | Resumable upload state (local staging path, bytes received, status). TTL 24h. |
 | `search_query_metrics` | Successful `POST /search` OpenSearch `took` (`took_ms`, `created_at`). Unbounded; dashboard averages the last 24 hours. No query text. |
 
-A file with no role/group grant is not searchable or listable. There is no automatic ACL on upload.
+A file with no role/group grant is not searchable or listable. There is no automatic ACL on HTTP upload or folder ingest.
 
 ## Package docs
 
-- [backend/README.md](backend/README.md) — API (incl. `/admin/*` + `/admin/stats`), ingest, search, `init_services`, proofs
+- [backend/README.md](backend/README.md) — API (incl. `/admin/*` + `/admin/stats`), HTTP ingest, folder CLI, search, `init_services`, proofs
 - [frontend/README.md](frontend/README.md) — SPA routes, auth, search/files/upload/admin clients
 
 ## Repo layout
 
 ```
-backend/                 FastAPI app, Alembic, init_services, ingest + search scripts
+backend/                 FastAPI app, Alembic, init_services, HTTP ingest + folder CLI + search scripts
 frontend/                React SPA (PKCE login, search, upload, files)
 setup/                   One-command local bootstrap (./setup/setup.sh)
 start-dev.sh             Local API + UI (uvicorn + Vite)

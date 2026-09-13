@@ -1,6 +1,6 @@
 # Backend
 
-FastAPI service for Enterprise Search: JWT auth against Keycloak, Postgres identity/files metadata + ACL, resumable local ingest into MinIO + OpenSearch, **client-hybrid search**, file list/open streams, **admin identity + file ACL** (bulk grants, members, sync jobs), **admin dashboard stats**, and bootstrap via `init_services`.
+FastAPI service for Enterprise Search: JWT auth against Keycloak, Postgres identity/files metadata + ACL, resumable local ingest into MinIO + OpenSearch, **ops folder ingest CLI**, **client-hybrid search**, file list/open streams, **admin identity + file ACL** (bulk grants, members, sync jobs), **admin dashboard stats**, and bootstrap via `init_services`.
 
 Managed with [uv](https://docs.astral.sh/uv/). Python **3.12+**.
 
@@ -11,11 +11,11 @@ app/
   api/routes/     health, auth, files, search, admin_identity, admin_acl, admin_stats
   core/           settings, JWT verification
   models/         identity, files, file_acl, upload_sessions, acl_sync_jobs, search_metrics
-  services/       file_access, file_acl_admin, acl_sync, identity_admin, keycloak_admin, opensearch_search, upload, admin_stats, search_metrics, …
+  services/       ingest (csv_extract, local_file, folder_walk, …), file_access, file_acl_admin, acl_sync, identity_admin, keycloak_admin, opensearch_search, upload, admin_stats, search_metrics, …
   schemas/        request/response models (files, search, uploads, admin_*)
 alembic/          migrations (run manually; not part of init_services)
 init_services/    Keycloak, identity mirror, OpenSearch security/ML/index, MinIO bucket
-scripts/          ingest_*, search_*, seed_file_acl_for_proofs, admin_*_proof
+scripts/          ingest_folder, ingest_*, search_*, seed_file_acl_for_proofs, admin_*_proof
 ```
 
 ## Setup
@@ -124,15 +124,48 @@ Hits are **chunk-grain** (snippet, `file_id`, `chunk_seq`, score, `display_name`
 
 - List/metadata/content use Postgres `file_acl` matched on JWT **role/group names** (`viewer` \| `editor`; ignore `_empty`). Realm `admin` does **not** bypass ACL.
 - Content streams `files.object_store_path` from MinIO only after ACL pass (**403** deny, **404** missing). No client-supplied object keys.
-- Uploads start with **empty** ACL — list/search stay empty until an admin grant (Access UI / bulk APIs) or the seed script.
+- Uploads and folder-CLI files start with **empty** ACL — list/search stay empty until an admin grant (Access UI / bulk APIs) or the seed script.
 
 ### Ingest rules
 
-- Types: **pdf / txt / csv** only (else 415). Cap **25 MiB**.
-- Chunking: **600** tokens / **75** overlap (~4 chars/token). CSV packs rows by token budget.
-- MinIO: **one** full object at `local/{file_id}/{safe_name}` on complete (ranges assemble on local disk).
-- OpenSearch: bulk as basic **admin**, omit `embedding` (ingest pipeline fills 384-dim). Chunks get `allowed_roles: []`, `allowed_groups: []` (no auto ACL).
-- Session ownership: `user_id == JWT sub` (admins do not hijack other sessions).
+Shared helper `ingest_local_bytes` (HTTP `complete()` and the folder CLI): parse/chunk → MinIO `put_object` → INSERT `files` → OpenSearch `_bulk` (`refresh=wait_for`) → `db.commit()`. C6 on failure: rollback `files`, delete OS docs if indexed, delete MinIO object if written. `_bulk` retries up to 5 times on transient `circuit_breaking_exception` and HTTP 429/503; mapping errors are not retried.
+
+- Types: **pdf / txt / csv** only. HTTP: else **415**, cap **25 MiB**. Folder CLI: other extensions `[skip]`; **no** 25 MiB skip.
+- Chunking: **600** tokens / **75** overlap (~4 chars/token). CSV packs rows by token budget; oversized rows still split via `chunk_text`. Parser raises `csv.field_size_limit` so a cell larger than the default 128 KiB can parse (do not routinely ingest multi-hundred-MiB CSVs — the process is in-memory).
+- MinIO: **one** full object at `local/{file_id}/{safe_name}` (basename only — not a nested prefix). HTTP ranges assemble on local disk first.
+- Postgres: one `files` row; **no** `file_acl`. HTTP also writes `upload_sessions`; the folder CLI does not.
+- OpenSearch: bulk as basic **admin**, omit `embedding` (ingest pipeline fills 384-dim). Chunks get `allowed_roles: []`, `allowed_groups: []` (no auto ACL). HTTP `original_source` is `null`; folder CLI stores the POSIX path relative to the folder root.
+- HTTP session ownership: `user_id == JWT sub` (admins do not hijack other sessions). Folder CLI uses **no JWT**.
+
+### Folder ingest CLI
+
+Ops script (stack up; API optional). Direct service call — not initiate / ranged PUT / JWT.
+
+```bash
+uv run python -m scripts.ingest_folder /path/to/folder
+uv run python -m scripts.ingest_folder /path/to/folder --dry-run
+uv run python -m scripts.ingest_folder /path/to/folder --fail-fast
+```
+
+| Flag / arg | Behavior |
+| --- | --- |
+| `folder` | Required; must exist and be a directory; else exit **1** |
+| `--dry-run` | Print classification only; **no** store writes; exit **0** if the folder exists |
+| `--fail-fast` | Stop after first ingest/parse/infra failure (type/hidden skips are not failures) |
+
+Walk does **not** follow file or directory symlinks. Skip if any relative path component starts with `.`. Re-running the same folder creates **new** `file_id`s.
+
+Stdout example:
+
+```text
+[skip]  ignored.bin  (unsupported extension)
+[ok]    notes.txt  file_id=...  chunks=1
+[fail]  empty.pdf  PDF has no extractable text (OCR not supported)
+
+ingested=2  failed=1  skipped_type=1  skipped_hidden=0
+```
+
+`--dry-run` uses `[ingest]` for eligible files. Files ≥ 512 MiB get an optional `[warn]` then still ingest. Exit **0** if every *attempted* ingest succeeded; **1** if any attempted ingest failed or the folder is missing. React `/upload` is unchanged.
 
 ## `init_services`
 
@@ -157,8 +190,10 @@ On OpenSearch **3.8**, hybrid+DLS is blocked (Landmine 13); platform proofs fall
 ## Proofs / checks
 
 ```bash
-uv run python -m scripts.ingest_unit_checks      # offline chunker/CSV
+uv run python -m scripts.ingest_unit_checks      # offline chunker/CSV + bulk retry
+uv run python -m scripts.ingest_folder_unit_checks  # offline walker / 25 MiB+ still eligible
 uv run python -m scripts.ingest_proof            # live JWT upload → PG/MinIO/OS
+uv run python -m scripts.ingest_folder_proof     # live folder CLI proofs 1–13 (writes sample files)
 uv run python -m scripts.search_unit_checks      # offline merge / DTO strip
 uv run python -m scripts.seed_file_acl_for_proofs  # optional G3 ACL + OS allowed_*
 uv run python -m scripts.search_view_proof       # list/open + client-hybrid DLS
