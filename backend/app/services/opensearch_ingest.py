@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import time
+from collections.abc import Callable
 from typing import Any
 from uuid import UUID
 
@@ -31,6 +32,7 @@ def build_chunk_document(
     object_store_path: str,
     uploaded_at: str,
     updated_at: str,
+    original_source: str | None = None,
 ) -> dict[str, Any]:
     """Chunk body for bulk index. Omits ``embedding`` (ingest pipeline fills it)."""
     chunk_id = f"{file_id}:{chunk_seq:06d}"
@@ -47,8 +49,79 @@ def build_chunk_document(
         "allowed_groups": [],
         "object_store_path": object_store_path,
         "ingestion_type": "local",
-        "original_source": None,
+        "original_source": original_source,
     }
+
+
+def bulk_item_error_details(payload: dict[str, Any]) -> list[Any]:
+    """Extract per-item ``index.error`` objects from a ``_bulk`` response body."""
+    details: list[Any] = []
+    for item in payload.get("items") or []:
+        index = item.get("index") or {}
+        if index.get("error"):
+            details.append(index["error"])
+    return details
+
+
+def bulk_failure_is_retryable(
+    *,
+    http_status: int | None = None,
+    item_errors: list[Any] | None = None,
+    response_text: str = "",
+) -> bool:
+    """True for transient OpenSearch memory / overload failures.
+
+    Folder proofs failed with ``circuit_breaking_exception`` durability
+    ``TRANSIENT`` (bytes_wanted/limit 0) while the parent breaker was open.
+    Mapping / parse errors are not retryable.
+    """
+    if http_status in {429, 503}:
+        return True
+    if "circuit_breaking_exception" in response_text:
+        return True
+    for err in item_errors or []:
+        if not isinstance(err, dict):
+            continue
+        if err.get("type") != "circuit_breaking_exception":
+            continue
+        if str(err.get("durability") or "TRANSIENT").upper() == "PERMANENT":
+            continue
+        return True
+    return False
+
+
+def execute_bulk_with_retry(
+    send: Callable[[], tuple[int, dict[str, Any] | None, str]],
+    *,
+    max_attempts: int = 5,
+    sleep: Callable[[float], None] = time.sleep,
+) -> dict[str, Any]:
+    """Call ``send()`` until success or a non-retryable / exhausted failure.
+
+    ``send`` must return ``(http_status, payload_or_none, response_text)``.
+    ``payload_or_none`` is None on HTTP-level errors.
+    """
+    last_message = "OpenSearch bulk failed"
+    for attempt in range(max_attempts):
+        status, payload, text = send()
+        item_errors: list[Any] = []
+        if payload is None:
+            last_message = f"OpenSearch bulk HTTP {status}: {text}"
+        elif not payload.get("errors"):
+            return payload
+        else:
+            item_errors = bulk_item_error_details(payload)
+            last_message = f"OpenSearch bulk item errors: {item_errors[:3]}"
+        can_retry = attempt < max_attempts - 1 and bulk_failure_is_retryable(
+            http_status=status,
+            item_errors=item_errors,
+            response_text=text,
+        )
+        if can_retry:
+            sleep(min(16.0, 2.0 * (2**attempt)))
+            continue
+        raise RuntimeError(last_message)
+    raise RuntimeError(last_message)
 
 
 def bulk_index_chunks(
@@ -67,24 +140,19 @@ def bulk_index_chunks(
         lines.append(json.dumps(doc))
     body = "\n".join(lines) + "\n"
 
-    with _admin_client(settings) as client:
-        response = client.post(
-            "/_bulk",
-            params={"refresh": "wait_for"},
-            content=body,
-            headers={"Content-Type": "application/x-ndjson"},
-        )
-    if response.is_error:
-        raise RuntimeError(f"OpenSearch bulk HTTP {response.status_code}: {response.text}")
-    payload = response.json()
-    if payload.get("errors"):
-        items = payload.get("items") or []
-        details = []
-        for item in items:
-            index = item.get("index") or {}
-            if index.get("error"):
-                details.append(index["error"])
-        raise RuntimeError(f"OpenSearch bulk item errors: {details[:3]}")
+    def send() -> tuple[int, dict[str, Any] | None, str]:
+        with _admin_client(settings) as client:
+            response = client.post(
+                "/_bulk",
+                params={"refresh": "wait_for"},
+                content=body,
+                headers={"Content-Type": "application/x-ndjson"},
+            )
+        if response.is_error:
+            return response.status_code, None, response.text
+        return response.status_code, response.json(), response.text
+
+    execute_bulk_with_retry(send)
 
 
 def delete_chunks_by_file_id(file_id: UUID, *, settings: Settings | None = None) -> None:
@@ -123,7 +191,9 @@ def get_chunks_by_file_id(
                 },
             )
         if response.is_error:
-            raise RuntimeError(f"OpenSearch search HTTP {response.status_code}: {response.text}")
+            raise RuntimeError(
+                f"OpenSearch search HTTP {response.status_code}: {response.text}"
+            )
         last = response.json().get("hits", {}).get("hits", [])
         if last or time.monotonic() >= deadline:
             return last
