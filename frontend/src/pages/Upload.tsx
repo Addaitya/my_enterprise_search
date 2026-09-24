@@ -175,16 +175,16 @@ export function Upload() {
     <AppShell>
       <section className="space-y-6">
         <div>
-          <h1 className="text-2xl font-semibold text-white">Upload files</h1>
-          <p className="mt-2 text-slate-400">
+          <h1 className="text-xl font-semibold text-gray-900">Upload files</h1>
+          <p className="mt-2 text-sm text-gray-500">
             Select one or more PDF, TXT, or CSV files (each up to{' '}
             {MAX_UPLOAD_BYTES / (1024 * 1024)} MiB). Each file is uploaded with a
             resumable byte-range session, then chunked and indexed.
           </p>
         </div>
 
-        <div className="space-y-3">
-          <label className="block text-sm text-slate-300" htmlFor="upload-files">
+        <div className="space-y-3 rounded-xl border border-gray-200 bg-white p-4">
+          <label className="block text-sm text-gray-700" htmlFor="upload-files">
             Files
           </label>
           <input
@@ -194,16 +194,18 @@ export function Upload() {
             multiple
             accept=".pdf,.txt,.csv,application/pdf,text/plain,text/csv"
             disabled={batchBusy}
-            className="block w-full text-sm text-slate-300 file:mr-3 file:rounded-md file:border-0 file:bg-slate-800 file:px-3 file:py-1.5 file:text-sm file:text-slate-200 hover:file:bg-slate-700 disabled:opacity-50"
+            className="block w-full text-sm text-gray-700 file:mr-3 file:rounded-lg file:border-0 file:bg-indigo-600 file:px-3 file:py-1.5 file:text-sm file:text-white hover:file:bg-indigo-700 disabled:opacity-50"
             onChange={(e) => onFileChange(e.target.files)}
           />
           {items.length > 0 ? (
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-gray-400">
               {items.length} selected
               {completedCount > 0 ? ` · ${completedCount} complete` : ''}
               {failedCount > 0 ? ` · ${failedCount} failed` : ''}
             </p>
-          ) : null}
+          ) : (
+            <p className="text-sm text-gray-400">No files selected.</p>
+          )}
         </div>
 
         <div className="flex flex-wrap gap-2">
@@ -225,14 +227,11 @@ export function Upload() {
               const percent = itemPercent(progress)
               const busy = isBusyPhase(progress.phase)
               return (
-                <li
-                  key={key}
-                  className="space-y-2 border-b border-slate-800 pb-3 last:border-0 last:pb-0"
-                >
+                <li key={key} className="space-y-2 rounded-xl border border-gray-200 bg-white p-4">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <p className="truncate text-sm text-slate-200">{file.name}</p>
-                      <p className="text-xs text-slate-500">
+                      <p className="truncate text-sm font-medium text-gray-900">{file.name}</p>
+                      <p className="text-xs text-gray-400">
                         {formatBytes(file.size)} · {phaseLabel(progress.phase)}
                         {busy || progress.phase === 'completed'
                           ? ` · ${formatBytes(progress.bytesReceived)} / ${formatBytes(progress.sizeBytes)} (${percent}%)`
@@ -242,7 +241,7 @@ export function Upload() {
                     {!batchBusy && progress.phase !== 'completed' ? (
                       <button
                         type="button"
-                        className="shrink-0 text-xs text-slate-500 hover:text-slate-300"
+                        className="shrink-0 text-xs text-rose-600 hover:text-rose-700"
                         onClick={() => removeItem(key)}
                       >
                         Remove
@@ -251,10 +250,10 @@ export function Upload() {
                   </div>
 
                   {(busy || progress.phase === 'completed') && (
-                    <div className="h-1.5 overflow-hidden rounded bg-slate-800">
+                    <div className="h-1.5 overflow-hidden rounded-full bg-gray-100">
                       <div
                         className={`h-full transition-[width] duration-150 ${
-                          progress.phase === 'completed' ? 'bg-emerald-600' : 'bg-sky-600'
+                          progress.phase === 'completed' ? 'bg-emerald-600' : 'bg-indigo-600'
                         }`}
                         style={{
                           width: `${progress.phase === 'initiating' ? 2 : percent}%`,
@@ -264,21 +263,21 @@ export function Upload() {
                   )}
 
                   {progress.error ? (
-                    <p className="text-xs text-rose-400" role="alert">
+                    <p className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700" role="alert">
                       {progress.error}
                     </p>
                   ) : null}
 
                   {progress.result ? (
-                    <div className="space-y-0.5 text-xs text-slate-400">
+                    <div className="space-y-1 text-xs text-gray-500">
                       <p>
                         File id{' '}
-                        <span className="font-mono text-slate-500">{progress.result.id}</span>
+                        <span className="font-mono text-gray-700">{progress.result.id}</span>
                         {' · '}
                         {progress.result.chunk_count} chunk
                         {progress.result.chunk_count === 1 ? '' : 's'}
                       </p>
-                      <p className="text-amber-500/90">
+                      <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-amber-700">
                         No ACL assigned — not searchable until an admin grants access.
                       </p>
                     </div>

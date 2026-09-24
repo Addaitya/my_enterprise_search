@@ -69,47 +69,66 @@ export function Files() {
       <section className="space-y-4">
         <div className="flex items-baseline justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-semibold text-white">View files</h1>
-            <p className="mt-1 text-slate-400">Files you can open via your role or group grants.</p>
+            <h1 className="text-xl font-semibold text-gray-900">View files</h1>
+            <p className="mt-1 text-sm text-gray-500">Files you can open via your role or group grants.</p>
           </div>
           <Button type="button" onClick={() => void load()} disabled={loading}>
             {loading ? 'Loading…' : 'Refresh'}
           </Button>
         </div>
 
-        {error ? <p className="text-sm text-rose-400">{error}</p> : null}
+        {error ? (
+          <p className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p>
+        ) : null}
 
         {loading && items.length === 0 ? (
-          <p className="text-sm text-slate-400">Loading…</p>
+          <div className="flex flex-col items-center gap-4 rounded-xl border border-gray-200 bg-white py-16">
+            <div className="spinner" />
+            <p className="text-sm text-gray-400">Loading files…</p>
+          </div>
         ) : items.length === 0 ? (
-          <p className="text-sm text-slate-400">No files visible yet. An admin must grant access.</p>
+          <div className="rounded-xl border border-gray-200 bg-white py-16 text-center">
+            <div className="text-4xl">📁</div>
+            <p className="mt-2 font-medium text-gray-600">No files visible yet</p>
+            <p className="mt-1 text-sm text-gray-400">An admin must grant access.</p>
+          </div>
         ) : (
           <div className="space-y-2">
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-gray-400">
               {total} file{total === 1 ? '' : 's'}
             </p>
-            <ul className="divide-y divide-slate-800 rounded-md border border-slate-800">
-              {items.map((file) => (
-                <li
-                  key={file.id}
-                  className="flex flex-wrap items-center justify-between gap-3 px-3 py-3"
-                >
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium text-slate-100">{file.display_name}</p>
-                    <p className="text-xs text-slate-500">
-                      {file.file_type} · {formatBytes(file.size_bytes)} · {shortId(file.id)}
-                    </p>
-                  </div>
-                  <Button
-                    type="button"
-                    disabled={downloadingId === file.id}
-                    onClick={() => void onOpen(file)}
-                  >
-                    {downloadingId === file.id ? 'Opening…' : 'Open'}
-                  </Button>
-                </li>
-              ))}
-            </ul>
+            <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
+              <table className="w-full text-left text-sm">
+                <thead className="border-b border-gray-200 text-xs text-gray-400">
+                  <tr>
+                    <th className="px-4 py-3 font-medium">Name</th>
+                    <th className="px-4 py-3 font-medium">Type</th>
+                    <th className="px-4 py-3 font-medium">Size</th>
+                    <th className="px-4 py-3 font-medium">Id</th>
+                    <th className="px-4 py-3 font-medium" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {items.map((file) => (
+                    <tr key={file.id} className="border-t border-gray-100">
+                      <td className="max-w-xs truncate px-4 py-3 font-medium text-gray-900">{file.display_name}</td>
+                      <td className="px-4 py-3 text-gray-600">{file.file_type}</td>
+                      <td className="px-4 py-3 text-gray-600">{formatBytes(file.size_bytes)}</td>
+                      <td className="px-4 py-3 font-mono text-xs text-gray-400">{shortId(file.id)}</td>
+                      <td className="px-4 py-3 text-right">
+                        <Button
+                          type="button"
+                          disabled={downloadingId === file.id}
+                          onClick={() => void onOpen(file)}
+                        >
+                          {downloadingId === file.id ? 'Opening…' : 'Open'}
+                        </Button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
       </section>
