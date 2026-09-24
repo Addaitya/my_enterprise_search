@@ -2,7 +2,7 @@
 
 Company-internal hybrid search (keyword + semantic) over uploaded files, with role- and group-based access control. v1 accepts local **PDF / TXT / CSV** uploads.
 
-**Now:** Compose stack, Keycloak PKCE login, FastAPI JWT, OpenSearch 3.8 JWKS + `files_searcher` DLS, Postgres identity mirror + `files` / `file_acl` / `upload_sessions` / `search_query_metrics`, resumable ingest API, **ops folder ingest CLI**, React multi-file `/upload`, **client-hybrid `POST /search`**, ACL-filtered **View files** + **Open** (MinIO stream), admin **Dashboard** (live stats + placeholders), **Access Control(Admin)** (Users / Roles / Groups / Access), **Configuration** placeholder.
+**Now:** Compose stack, Keycloak PKCE login, FastAPI JWT, OpenSearch 3.8 JWKS + `files_searcher` DLS, Postgres identity mirror + `files` / `file_acl` / `upload_sessions` / `search_query_metrics`, resumable ingest API, **ops folder ingest CLI**, React multi-file `/upload`, **client-hybrid `POST /search`**, ACL-filtered **View files** + **Open** (MinIO stream), admin **Dashboard** (live stats + placeholders), **Access Control(Admin)** (Users / Roles / Groups / Access), **Configuration** local placeholder shell (ingestion is not built).
 
 **Not yet:** Check-access explorer / audit CSV, Task 7 SKIP LOCKED + dual-write repair, native OpenSearch `hybrid`+DLS (needs 3.9+; product path uses client-side merge on 3.8), connector ingestion pipeline (dashboard connector / rate / last-sync stay API placeholders), content-hash dedup, auto-ACL after ingest.
 
@@ -105,7 +105,7 @@ Vite proxies `/api` → FastAPI. Sign in, then:
 - **View files** (`/files`) — ACL-filtered list + Open
 - **Dashboard** (`/dashboard`, realm `admin`) — six KPIs from `GET /admin/stats`
 - **Access Control(Admin)** (`/admin`, realm `admin`) — Users / Roles / Groups / Access (file grants + members)
-- **Configuration** (`/configuration`, realm `admin`) — placeholder copy
+- **Configuration** (`/configuration`, realm `admin`) — local placeholder shell; does not ingest
 
 `GET /health` is public. Product routes (`/auth/me`, `/search`, `/files*`, `/files/uploads*`) require a Bearer token. Admin identity/ACL routes and `GET /admin/stats` require realm role `admin`. The folder CLI talks to Postgres / MinIO / OpenSearch directly — no JWT and no `/files/uploads` session.
 
@@ -151,9 +151,9 @@ Navbar (realm `admin` only): Search | Upload | View files | **Dashboard** | **Ac
 
 | Page | Path | What it does |
 | --- | --- | --- |
-| **Dashboard** | `/dashboard` | Six cards from `GET /admin/stats`. Live: avg **OpenSearch** query time (**last 24 hours** of successful `POST /search`; `—` if none), MinIO bucket size, `COUNT(*)` of `files`. Placeholders until the connector pipeline: active connectors `8`, ingest rate `12,400 docs/hr`, last sync `"2 min ago"`. MinIO list failure → **502**. |
+| **Dashboard** | `/dashboard` | Six values from `GET /admin/stats`. Live: avg **OpenSearch** query time (**last 24 hours** of successful `POST /search`; `—` if none), MinIO bucket size, `COUNT(*)` of `files`. API placeholders until the connector pipeline: active connectors `8`, ingest rate `12,400 docs/hr`, last sync `"2 min ago"`. The page also shows static placeholder cards (p99, searches today, total sources), a static connector table, and static index bars. Those are not from the API. MinIO list failure → **502**. |
 | **Access Control(Admin)** | `/admin` | Identity + file ACL (tabs unchanged). Label only — URL, `Admin.tsx`, and `/admin/*` APIs stay. |
-| **Configuration** | `/configuration` | Body text `this is configuration.` (no settings API yet). |
+| **Configuration** | `/configuration` | Local placeholder shell. Ingestion edits stay in the browser and are not connected. The other sections are not built. No settings API. Connector count, rate, and last sync stay the dashboard API placeholders. |
 
 Successful searches persist OpenSearch `took` (no query text) into `search_query_metrics` — client_hybrid stores match+neural; native_hybrid stores the single query. API `took_ms` stays wall-clock. Migrate with `uv run alembic upgrade head` (`c3d4e5f6a7b8`). Proof: `uv run python -m scripts.admin_stats_proof`.
 

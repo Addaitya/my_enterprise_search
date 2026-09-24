@@ -22,6 +22,8 @@
 
 The frozen plan file was not in this checkout, so it is not listed. The implemented record is `prompt_2/context_migration.md`.
 
+**Implemented record (not product truth):** `prompt_2/frontend_ui_plan.md` — frontend restyle and local placeholders. Shipped. Do not treat the checklist as open work.
+
 ## Briefs
 
 | Topic | Status | Path | Topic sentence |

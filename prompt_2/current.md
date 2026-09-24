@@ -22,7 +22,7 @@ Company-internal hybrid search (keyword + semantic) over files, with role- and g
 - ACL-filtered View files and Open (MinIO stream)
 - Admin Dashboard (live stats and placeholders)
 - Access Control (Users / Roles / Groups / Access)
-- Configuration placeholder
+- Configuration local placeholder shell (no settings API; ingestion is not built)
 
 ## Not yet
 
