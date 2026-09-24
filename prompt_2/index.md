@@ -4,6 +4,20 @@
 
 **Live (agents):** `prompt_2/current.md` — product truth. Read it before changing product behavior.
 
+**Shipped detail:** `prompt_2/context/`. These notes are the agent-readable extract of the archive. The frozen files stay the original record.
+
+| Note | Covers |
+| --- | --- |
+| `prompt_2/context/auth.md` | PKCE, JWT, JWKS, seed users, files_searcher |
+| `prompt_2/context/data_model.md` | Identity mirror, files, file_acl |
+| `prompt_2/context/search.md` | Index, MiniLM, DLS, client hybrid on 3.8 |
+| `prompt_2/context/ingest.md` | HTTP upload and folder CLI |
+| `prompt_2/context/search_view.md` | POST /search, View files, Open |
+| `prompt_2/context/admin.md` | Users, roles, groups, file ACL, members |
+| `prompt_2/context/dashboard.md` | GET /admin/stats |
+| `prompt_2/context/setup.md` | ./setup/setup.sh |
+| `prompt_2/context/connectors.md` | Unfinished multi-connector proposal |
+
 **Live (humans):** `README.md` — clone, setup, and stack. Not the agent source of truth.
 
 The frozen plan file was not in this checkout, so it is not listed. The implemented record is `prompt_2/context_migration.md`.

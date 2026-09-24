@@ -2,6 +2,8 @@
 
 Agent source of truth. Humans use the root `README.md` for clone and setup. When product behavior changes, update both. Do not edit `prompts/`.
 
+Topic detail (decisions, APIs, and landmines taken from the archive) lives in `prompt_2/context/`. Read the matching note before changing that area. `prompt_2/index.md` maps each frozen `prompts/` file to one of those notes.
+
 ## What this is
 
 Company-internal hybrid search (keyword + semantic) over files, with role- and group-based access control (RACL). v1 accepts local PDF, TXT, and CSV uploads.
