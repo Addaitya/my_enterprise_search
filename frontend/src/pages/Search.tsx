@@ -4,16 +4,12 @@ import { ApiError } from '../api/client'
 import { downloadFileContent } from '../api/files'
 import { searchFiles, type SearchHit, type SearchResponse } from '../api/search'
 import { AppShell } from '../components/layout/AppShell'
+import { EmptyState } from '../components/search/EmptyState'
+import { FacetColumn } from '../components/search/FacetColumn'
+import { HitDetails } from '../components/search/HitDetails'
+import { ResultCard } from '../components/search/ResultCard'
 import { Button } from '../components/ui/Button'
 import { useHealth } from '../hooks/useHealth'
-
-function formatScore(score: number): string {
-  return score.toFixed(3)
-}
-
-function hitTitle(hit: SearchHit): string {
-  return hit.display_name || hit.chunk_id
-}
 
 export function Search() {
   const { health, error: healthError } = useHealth()
@@ -22,18 +18,21 @@ export function Search() {
   const [error, setError] = useState<string | null>(null)
   const [result, setResult] = useState<SearchResponse | null>(null)
   const [openingId, setOpeningId] = useState<string | null>(null)
+  const [selected, setSelected] = useState<SearchHit | null>(null)
+  const [showAsk, setShowAsk] = useState(false)
 
-  async function onSubmit(event: SubmitEvent<HTMLFormElement>) {
-    event.preventDefault()
-    const q = query.trim()
+  async function runSearch(raw: string) {
+    const q = raw.trim()
     if (!q) {
       setError('Enter a search query.')
       setResult(null)
+      setSelected(null)
       return
     }
 
     setLoading(true)
     setError(null)
+    setSelected(null)
     try {
       const response = await searchFiles(q, 10)
       setResult(response)
@@ -57,12 +56,21 @@ export function Search() {
     }
   }
 
+  function onSubmit(event: SubmitEvent<HTMLFormElement>) {
+    event.preventDefault()
+    void runSearch(query)
+  }
+
+  function onSuggest(text: string) {
+    setQuery(text)
+    void runSearch(text)
+  }
+
   async function onOpen(hit: SearchHit) {
     if (!hit.file_id) {
       setError('This hit has no file_id to open.')
       return
     }
-    // proof-* fixtures use synthetic file_ids — skip MinIO open
     if (hit.file_id.startsWith('file-proof-') || hit.chunk_id.startsWith('proof-')) {
       setError('Proof fixture hits cannot be downloaded (no MinIO object).')
       return
@@ -87,69 +95,106 @@ export function Search() {
   return (
     <AppShell>
       <section id="search" className="space-y-4">
-        <h1 className="text-2xl font-semibold text-white">Search company files</h1>
-        <p className="text-slate-400">
-          Hybrid keyword + semantic search with role and group access control.
-        </p>
         <form className="flex gap-2" onSubmit={onSubmit}>
           <input
-            className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm outline-none focus:border-sky-500"
+            className="search-glow w-full rounded-xl border-2 border-gray-200 bg-white px-4 py-2.5 text-sm text-gray-900 outline-none focus:border-indigo-400"
             placeholder="Search files…"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             disabled={loading}
             aria-label="Search query"
           />
-          <Button type="submit" disabled={loading}>
+          <Button type="submit" disabled={loading || query.trim() === ''}>
             {loading ? 'Searching…' : 'Search'}
           </Button>
         </form>
 
-        {error ? <p className="text-sm text-rose-400">{error}</p> : null}
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="rounded-full bg-indigo-600 px-3 py-1 text-sm text-white">⚡ Hybrid</span>
+          <button
+            type="button"
+            disabled
+            className="cursor-not-allowed rounded-full bg-gray-100 px-3 py-1 text-sm text-gray-400"
+          >
+            🔤 Keyword
+          </button>
+          <button
+            type="button"
+            disabled
+            className="cursor-not-allowed rounded-full bg-gray-100 px-3 py-1 text-sm text-gray-400"
+          >
+            🧠 Semantic
+          </button>
+          {result ? (
+            <button
+              type="button"
+              onClick={() => setShowAsk((open) => !open)}
+              className="rounded-full border border-gray-200 bg-white px-3 py-1 text-sm text-gray-700 hover:border-indigo-300"
+            >
+              {showAsk ? '🤖 Hide AI' : '🤖 Ask AI'}
+            </button>
+          ) : null}
+        </div>
 
-        {result ? (
-          <div className="space-y-3">
-            <p className="text-xs text-slate-500">
-              {result.total} hit{result.total === 1 ? '' : 's'} for “{result.q}” · {result.took_ms}{' '}
-              ms
-            </p>
-            {result.hits.length === 0 ? (
-              <p className="text-sm text-slate-400">No results.</p>
-            ) : (
-              <ul className="space-y-3">
-                {result.hits.map((hit) => (
-                  <li
-                    key={hit.chunk_id}
-                    className="rounded-md border border-slate-800 bg-slate-950/60 px-3 py-3"
-                  >
-                    <div className="flex items-baseline justify-between gap-3">
-                      <h2 className="text-sm font-medium text-slate-100">{hitTitle(hit)}</h2>
-                      <div className="flex shrink-0 items-center gap-2">
-                        <span className="text-xs text-slate-500">score {formatScore(hit.score)}</span>
-                        {hit.file_id ? (
-                          <Button
-                            type="button"
-                            disabled={openingId === hit.chunk_id}
-                            onClick={() => void onOpen(hit)}
-                          >
-                            {openingId === hit.chunk_id ? 'Opening…' : 'Open'}
-                          </Button>
-                        ) : null}
-                      </div>
-                    </div>
-                    <p className="mt-1 whitespace-pre-wrap text-sm text-slate-300">{hit.snippet}</p>
-                    <p className="mt-2 text-xs text-slate-500">
-                      {hit.meta_file_type ?? 'chunk'} · {hit.chunk_id}
-                      {hit.file_id ? ` · file ${hit.file_id}` : ''}
-                    </p>
-                  </li>
-                ))}
-              </ul>
-            )}
+        {showAsk && result ? (
+          <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-5 text-sm text-gray-700 fade-in">
+            Answer generation is not connected.
           </div>
         ) : null}
 
-        <p className="text-xs text-slate-500">
+        {error ? (
+          <p className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+            {error}
+          </p>
+        ) : null}
+
+        {loading ? (
+          <div className="flex flex-col items-center gap-4 py-16">
+            <div className="spinner" />
+            <p className="text-sm text-gray-400">Running hybrid search…</p>
+          </div>
+        ) : null}
+
+        {!loading && !result ? <EmptyState onSuggest={onSuggest} disabled={loading} /> : null}
+
+        {!loading && result ? (
+          <div className="flex flex-col gap-6 sm:flex-row">
+            <FacetColumn />
+            <div className="min-w-0 flex-1 space-y-3">
+              <p className="text-sm text-gray-600">
+                {result.total} hits · {result.took_ms} ms
+              </p>
+              {result.hits.length === 0 ? (
+                <div className="py-16 text-center">
+                  <div className="text-4xl">🔎</div>
+                  <p className="mt-2 font-medium text-gray-600">No results found</p>
+                  <p className="mt-1 text-sm text-gray-400">Try a different query.</p>
+                </div>
+              ) : (
+                <ul className="space-y-3">
+                  {result.hits.map((hit) => (
+                    <li key={hit.chunk_id}>
+                      <ResultCard hit={hit} onSelect={setSelected} />
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <div className="flex items-center gap-3 text-sm text-gray-500">
+                <button type="button" disabled className="cursor-not-allowed rounded-lg border border-gray-200 px-3 py-1 opacity-50">
+                  ← Prev
+                </button>
+                <span>
+                  showing {result.hits.length} of {result.total}
+                </span>
+                <button type="button" disabled className="cursor-not-allowed rounded-lg border border-gray-200 px-3 py-1 opacity-50">
+                  Next →
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        <p className="text-xs text-gray-400">
           {health
             ? `API ${health.status} · realm ${health.realm} · index ${health.opensearch_index}`
             : healthError
@@ -157,6 +202,15 @@ export function Search() {
               : 'Checking API…'}
         </p>
       </section>
+
+      {selected ? (
+        <HitDetails
+          hit={selected}
+          opening={openingId === selected.chunk_id}
+          onClose={() => setSelected(null)}
+          onOpen={(hit) => void onOpen(hit)}
+        />
+      ) : null}
     </AppShell>
   )
 }
