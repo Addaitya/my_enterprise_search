@@ -1,0 +1,8 @@
+---
+description: Frozen prompts/ files are not live product truth
+globs: prompts/**
+alwaysApply: false
+---
+You opened a file under `prompts/`. That folder is a frozen archive.
+Live product for agents: `prompt_2/current.md`. Catalog: `prompt_2/index.md`.
+Do not flip or trust checkboxes. Do not edit files under `prompts/`.
