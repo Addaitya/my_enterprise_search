@@ -19,8 +19,8 @@ export function AdminRoute({ children }: AdminRouteProps) {
   if (!roles.includes('admin')) {
     return (
       <AppShell>
-        <h1 className="text-2xl font-semibold text-white">Forbidden</h1>
-        <p className="mt-2 text-slate-400">Admin role required.</p>
+        <h1 className="text-2xl font-semibold text-gray-900">Forbidden</h1>
+        <p className="mt-2 text-gray-500">Admin role required.</p>
       </AppShell>
     )
   }
