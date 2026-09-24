@@ -207,5 +207,6 @@ setup/                   One-command local bootstrap (./setup/setup.sh)
 start-dev.sh             Local API + UI (uvicorn + Vite)
 docker-compose.yml
 docker_service_configs/  Keycloak realm, OpenSearch mappings/pipelines/security, Postgres init
-prompts/                 Setup notes and task plan
+prompts/                 Frozen original notes (do not edit). Agent memory: prompt_2/ + .cursor/rules/
+prompt_2/                Agent product truth (current.md) and catalog (index.md)
 ```

@@ -1,0 +1,14 @@
+---
+description: Where product truth and project memory live
+alwaysApply: true
+---
+Product truth for agents: `prompt_2/current.md`. Read it before changing product behavior.
+Root `README.md` is the human setup guide — keep it in sync when product behavior changes,
+but do not treat it as the agent SoT.
+
+`prompts/` is a frozen archive. Do not edit it. Do not treat files there as current —
+checkboxes and “source of truth” lines are stale. Find a slice via `prompt_2/index.md`
+and open that one file only if you need why/how it was built.
+
+Do not invent a Task 7 plan. Hardening gaps stay in `prompt_2/current.md` “Not yet”.
+Do not search OpenSearch as basic `admin`. Do not auto-grant `file_acl` on ingest.
