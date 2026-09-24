@@ -56,7 +56,7 @@ export function RolePicker({
               key={name}
               type="button"
               disabled={disabled}
-              className="rounded-md border border-sky-800 bg-sky-950/40 px-2 py-1 text-sm text-sky-200 hover:border-sky-600"
+              className="rounded-md border border-indigo-200 bg-indigo-50 px-2 py-1 text-sm text-indigo-700 hover:border-indigo-400"
               onClick={() => toggle(name)}
             >
               {name} ×
@@ -64,7 +64,7 @@ export function RolePicker({
           ))}
         </div>
       ) : null}
-      <div className="max-h-40 overflow-y-auto rounded-md border border-slate-800">
+      <div className="max-h-40 overflow-y-auto rounded-md border border-gray-200">
         {opts.map((role) => (
           <button
             key={role.id}
@@ -72,16 +72,16 @@ export function RolePicker({
             disabled={disabled}
             className={`flex w-full items-center justify-between px-3 py-1.5 text-left text-sm ${
               value.includes(role.name)
-                ? 'bg-slate-700 text-white'
-                : 'text-slate-300 hover:bg-slate-800'
+                ? 'bg-indigo-600 text-white'
+                : 'text-gray-600 hover:bg-gray-100'
             }`}
             onClick={() => toggle(role.name)}
           >
             <span>{role.name}</span>
-            <span className="text-xs text-slate-500">Role</span>
+            <span className="text-xs text-gray-400">Role</span>
           </button>
         ))}
-        {opts.length === 0 ? <p className="px-3 py-2 text-sm text-slate-500">No matches</p> : null}
+        {opts.length === 0 ? <p className="px-3 py-2 text-sm text-gray-400">No matches</p> : null}
       </div>
     </div>
   )

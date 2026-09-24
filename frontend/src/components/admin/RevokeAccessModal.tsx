@@ -53,12 +53,12 @@ export function RevokeAccessModal({ files, roles, groups, onClose, onDone, onErr
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-lg border border-slate-700 bg-slate-950 p-5 shadow-xl">
-        <h2 className="text-lg font-medium text-white">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-gray-200 bg-white p-5 shadow-2xl">
+        <h2 className="text-lg font-medium text-gray-900">
           Revoke access from {files.length} file{files.length === 1 ? '' : 's'}
         </h2>
-        <p className="mt-1 text-sm text-slate-400">
+        <p className="mt-1 text-sm text-gray-500">
           Remove these roles/groups from selected files
         </p>
 

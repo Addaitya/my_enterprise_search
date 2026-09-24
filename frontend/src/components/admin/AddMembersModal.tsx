@@ -58,9 +58,9 @@ export function AddMembersModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-lg border border-slate-700 bg-slate-950 p-5 shadow-xl">
-        <h2 className="text-lg font-medium text-white">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-gray-200 bg-white p-5 shadow-2xl">
+        <h2 className="text-lg font-medium text-gray-900">
           Add members to {kind} {principalName}
         </h2>
         <div className="mt-4 space-y-4">

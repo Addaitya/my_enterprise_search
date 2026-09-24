@@ -123,9 +123,9 @@ export function MembersSection({
   }
 
   return (
-    <section className="space-y-3 rounded-md border border-slate-800 p-4">
+    <section className="space-y-3 rounded-md border border-gray-200 p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-lg font-medium text-white">Members — {principalName}</h2>
+        <h2 className="text-lg font-medium text-gray-900">Members — {principalName}</h2>
         {manageable ? (
           <Button type="button" onClick={() => setAddOpen(true)} disabled={busy}>
             Add members…
@@ -134,7 +134,7 @@ export function MembersSection({
       </div>
 
       {!manageable ? (
-        <p className="text-sm text-slate-500">Members of this system group cannot be managed here.</p>
+        <p className="text-sm text-gray-400">Members of this system group cannot be managed here.</p>
       ) : (
         <>
           <div className="flex flex-wrap gap-2">
@@ -159,7 +159,7 @@ export function MembersSection({
           </div>
 
           <table className="w-full text-left text-sm">
-            <thead className="text-xs uppercase text-slate-500">
+            <thead className="text-xs uppercase text-gray-400">
               <tr>
                 <th className="py-2 pr-2">
                   <input
@@ -179,7 +179,7 @@ export function MembersSection({
             </thead>
             <tbody>
               {members.map((m) => (
-                <tr key={m.id} className="border-t border-slate-800">
+                <tr key={m.id} className="border-t border-gray-200">
                   <td className="py-2 pr-2">
                     <input
                       type="checkbox"
@@ -188,15 +188,15 @@ export function MembersSection({
                       disabled={busy}
                     />
                   </td>
-                  <td className="py-2 pr-3 text-slate-100">{m.username}</td>
-                  <td className="py-2 pr-3 text-slate-300">{m.email || '—'}</td>
-                  <td className="py-2 pr-3 text-slate-300">{m.enabled ? 'yes' : 'no'}</td>
-                  <td className="py-2 pr-3 text-slate-300">{m.role_names.join(', ') || '—'}</td>
-                  <td className="py-2 pr-3 text-slate-300">{m.group_names.join(', ') || '—'}</td>
+                  <td className="py-2 pr-3 text-gray-900">{m.username}</td>
+                  <td className="py-2 pr-3 text-gray-600">{m.email || '—'}</td>
+                  <td className="py-2 pr-3 text-gray-600">{m.enabled ? 'yes' : 'no'}</td>
+                  <td className="py-2 pr-3 text-gray-600">{m.role_names.join(', ') || '—'}</td>
+                  <td className="py-2 pr-3 text-gray-600">{m.group_names.join(', ') || '—'}</td>
                   <td className="py-2">
                     <button
                       type="button"
-                      className="text-rose-400 hover:text-rose-300"
+                      className="text-rose-600 hover:text-rose-700"
                       disabled={busy}
                       onClick={() => void removeUsers([m.id])}
                     >
@@ -207,7 +207,7 @@ export function MembersSection({
               ))}
               {members.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="py-3 text-slate-500">
+                  <td colSpan={7} className="py-3 text-gray-400">
                     No members yet.
                   </td>
                 </tr>
@@ -215,7 +215,7 @@ export function MembersSection({
             </tbody>
           </table>
           {total > members.length ? (
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-gray-400">
               Showing {members.length} of {total}
             </p>
           ) : null}

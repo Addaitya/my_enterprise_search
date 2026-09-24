@@ -18,13 +18,13 @@ function errMessage(err: unknown): string {
 }
 
 export function SyncStatusBadge({ job }: { job: AclJob | null | undefined }) {
-  if (!job) return <span className="text-slate-600">—</span>
+  if (!job) return <span className="text-gray-400">—</span>
   const color =
     job.status === 'succeeded'
-      ? 'text-emerald-400'
+      ? 'text-emerald-700'
       : job.status === 'failed'
-        ? 'text-rose-400'
-        : 'text-amber-300'
+        ? 'text-rose-600'
+        : 'text-amber-700'
   return <span className={`text-xs font-medium ${color}`}>{job.status}</span>
 }
 
@@ -90,20 +90,20 @@ export function JobTray({ jobIds, onJobsChange, onNotice, onError }: Props) {
   }
 
   return (
-    <div className="space-y-2 rounded-md border border-slate-700 bg-slate-900/60 px-3 py-2">
-      <h3 className="text-xs font-medium uppercase tracking-wide text-slate-400">Sync jobs</h3>
-      <ul className="space-y-2 text-sm text-slate-300">
+    <div className="space-y-2 rounded-md border border-gray-200 bg-gray-50 px-3 py-2">
+      <h3 className="text-xs font-medium uppercase tracking-wide text-gray-500">Sync jobs</h3>
+      <ul className="space-y-2 text-sm text-gray-600">
         {jobs.map((job) => (
           <li key={job.id} className="flex flex-wrap items-center justify-between gap-2">
             <div>
               <SyncStatusBadge job={job} />
-              <span className="ml-2 font-mono text-xs text-slate-500">{job.id.slice(0, 8)}…</span>
+              <span className="ml-2 font-mono text-xs text-gray-400">{job.id.slice(0, 8)}…</span>
               {job.total_chunks != null ? (
-                <span className="ml-2 text-xs text-slate-500">
+                <span className="ml-2 text-xs text-gray-400">
                   {job.updated_chunks ?? 0}/{job.total_chunks} chunks
                 </span>
               ) : null}
-              {job.error ? <p className="mt-0.5 text-xs text-rose-400">{job.error}</p> : null}
+              {job.error ? <p className="mt-0.5 text-xs text-rose-600">{job.error}</p> : null}
             </div>
             {job.status === 'failed' ? (
               <Button
@@ -116,7 +116,7 @@ export function JobTray({ jobIds, onJobsChange, onNotice, onError }: Props) {
             ) : null}
           </li>
         ))}
-        {jobs.length === 0 ? <li className="text-slate-500">Loading jobs…</li> : null}
+        {jobs.length === 0 ? <li className="text-gray-400">Loading jobs…</li> : null}
       </ul>
     </div>
   )

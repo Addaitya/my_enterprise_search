@@ -3,7 +3,7 @@ type Props = {
 }
 
 export function ImpactPreview({ text }: Props) {
-  return <p className="rounded-md border border-slate-800 bg-slate-900/50 px-3 py-2 text-sm text-slate-300">{text}</p>
+  return <p className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-600">{text}</p>
 }
 
 export function buildGrantImpact(

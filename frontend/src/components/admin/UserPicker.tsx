@@ -69,7 +69,7 @@ export function UserPicker({ value, onChange, disabled, excludeIds }: Props) {
               key={u.id}
               type="button"
               disabled={disabled}
-              className="rounded-md border border-sky-800 bg-sky-950/40 px-2 py-1 text-sm text-sky-200 hover:border-sky-600"
+              className="rounded-md border border-indigo-200 bg-indigo-50 px-2 py-1 text-sm text-indigo-700 hover:border-indigo-400"
               onClick={() => toggle(u)}
             >
               {u.username} ×
@@ -77,8 +77,8 @@ export function UserPicker({ value, onChange, disabled, excludeIds }: Props) {
           ))}
         </div>
       ) : null}
-      <div className="max-h-40 overflow-y-auto rounded-md border border-slate-800">
-        {loading ? <p className="px-3 py-2 text-sm text-slate-500">Searching…</p> : null}
+      <div className="max-h-40 overflow-y-auto rounded-md border border-gray-200">
+        {loading ? <p className="px-3 py-2 text-sm text-gray-400">Searching…</p> : null}
         {!loading &&
           visible.map((user) => (
             <button
@@ -87,17 +87,17 @@ export function UserPicker({ value, onChange, disabled, excludeIds }: Props) {
               disabled={disabled}
               className={`flex w-full items-center justify-between px-3 py-1.5 text-left text-sm ${
                 isSelected(user.id)
-                  ? 'bg-slate-700 text-white'
-                  : 'text-slate-300 hover:bg-slate-800'
+                  ? 'bg-indigo-600 text-white'
+                  : 'text-gray-600 hover:bg-gray-100'
               }`}
               onClick={() => toggle(user)}
             >
               <span>{user.username}</span>
-              <span className="truncate text-xs text-slate-500">{user.email || '—'}</span>
+              <span className="truncate text-xs text-gray-400">{user.email || '—'}</span>
             </button>
           ))}
         {!loading && visible.length === 0 ? (
-          <p className="px-3 py-2 text-sm text-slate-500">No matches</p>
+          <p className="px-3 py-2 text-sm text-gray-400">No matches</p>
         ) : null}
       </div>
     </div>

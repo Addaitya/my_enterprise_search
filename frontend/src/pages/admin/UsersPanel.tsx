@@ -148,8 +148,8 @@ export function UsersPanel({
   return (
     <div className="space-y-4">
       {selectedIds.size > 0 ? (
-        <div className="sticky top-0 z-10 flex flex-wrap items-center gap-3 rounded-md border border-slate-700 bg-slate-950/95 px-3 py-2">
-          <span className="text-sm text-slate-400">{selectedIds.size} selected</span>
+        <div className="sticky top-0 z-10 flex flex-wrap items-center gap-3 rounded-md border border-gray-200 bg-white/95 px-3 py-2">
+          <span className="text-sm text-gray-500">{selectedIds.size} selected</span>
           <Button type="button" onClick={() => setBulkKind('role')} disabled={busy}>
             Add to role…
           </Button>
@@ -158,7 +158,7 @@ export function UsersPanel({
           </Button>
           <button
             type="button"
-            className="text-sm text-slate-400 hover:text-slate-200"
+            className="text-sm text-gray-500 hover:text-gray-900"
             onClick={() => setSelectedIds(new Set())}
           >
             Clear
@@ -168,7 +168,7 @@ export function UsersPanel({
 
       <div className="grid gap-8 lg:grid-cols-[1fr_1.2fr]">
         <form onSubmit={(e) => void onSubmit(e)} className="space-y-3">
-          <h2 className="text-lg font-medium text-white">
+          <h2 className="text-lg font-medium text-gray-900">
             {editingUser ? `Edit ${editingUser.username}` : 'Create user'}
           </h2>
           {!editingUser ? (
@@ -182,8 +182,8 @@ export function UsersPanel({
               />
             </label>
           ) : (
-            <p className="text-sm text-slate-400">
-              Username <span className="text-slate-200">{editingUser.username}</span> (immutable)
+            <p className="text-sm text-gray-500">
+              Username <span className="text-gray-800">{editingUser.username}</span> (immutable)
             </p>
           )}
           <label className={labelClass}>
@@ -207,7 +207,7 @@ export function UsersPanel({
               autoComplete="new-password"
             />
           </label>
-          <label className="flex items-center gap-2 text-sm text-slate-300">
+          <label className="flex items-center gap-2 text-sm text-gray-600">
             <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
             Enabled
           </label>
@@ -217,7 +217,7 @@ export function UsersPanel({
             onChange={setRoleNames}
             disabled={busy}
           />
-          <p className="text-xs text-slate-500">Must include search-user and/or admin.</p>
+          <p className="text-xs text-gray-400">Must include search-user and/or admin.</p>
           <GroupPicker
             groups={groups}
             value={groupNames}
@@ -247,7 +247,7 @@ export function UsersPanel({
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
-              <thead className="text-xs uppercase text-slate-500">
+              <thead className="text-xs uppercase text-gray-400">
                 <tr>
                   <th className="py-2 pr-2">
                     <input
@@ -265,7 +265,7 @@ export function UsersPanel({
               </thead>
               <tbody>
                 {users.map((user) => (
-                  <tr key={user.id} className="border-t border-slate-800">
+                  <tr key={user.id} className="border-t border-gray-200">
                     <td className="py-2 pr-2">
                       <input
                         type="checkbox"
@@ -274,17 +274,17 @@ export function UsersPanel({
                       />
                     </td>
                     <td className="py-2 pr-3">
-                      <div className="font-medium text-slate-100">{user.username}</div>
-                      <div className="text-xs text-slate-500">
+                      <div className="font-medium text-gray-900">{user.username}</div>
+                      <div className="text-xs text-gray-400">
                         {user.email || '—'} · {user.enabled ? 'enabled' : 'disabled'}
                       </div>
                     </td>
-                    <td className="py-2 pr-3 text-slate-300">{user.role_names.join(', ') || '—'}</td>
-                    <td className="py-2 pr-3 text-slate-300">{user.group_names.join(', ') || '—'}</td>
+                    <td className="py-2 pr-3 text-gray-600">{user.role_names.join(', ') || '—'}</td>
+                    <td className="py-2 pr-3 text-gray-600">{user.group_names.join(', ') || '—'}</td>
                     <td className="py-2">
                       <button
                         type="button"
-                        className="text-sky-400 hover:text-sky-300"
+                        className="text-indigo-600 hover:text-indigo-700"
                         onClick={() => setEditingUser(user)}
                       >
                         Edit

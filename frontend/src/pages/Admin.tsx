@@ -12,8 +12,8 @@ import { UsersPanel } from './admin/UsersPanel'
 type Tab = 'users' | 'roles' | 'groups' | 'access'
 
 const tabClass = (active: boolean) =>
-  `rounded-md px-3 py-1.5 text-sm font-medium ${
-    active ? 'bg-slate-700 text-white' : 'text-slate-400 hover:text-slate-200'
+  `rounded-full px-3 py-1.5 text-sm font-medium ${
+    active ? 'bg-indigo-600 text-white' : 'text-gray-500 hover:bg-gray-100 hover:text-gray-900'
   }`
 
 function errMessage(err: unknown): string {
@@ -68,8 +68,8 @@ export function Admin() {
       <section className="space-y-6">
         <div className="flex flex-wrap items-baseline justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-semibold text-white">Access Control(Admin)</h1>
-            <p className="mt-1 text-slate-400">
+            <h1 className="text-2xl font-semibold text-gray-900">Access Control(Admin)</h1>
+            <p className="mt-1 text-gray-500">
               Manage users, roles, groups, and file access (Keycloak + Postgres + OpenSearch sync).
             </p>
           </div>
@@ -78,7 +78,7 @@ export function Admin() {
           </Button>
         </div>
 
-        <div className="flex flex-wrap gap-2 border-b border-slate-800 pb-3">
+        <div className="flex flex-wrap gap-2 border-b border-gray-200 pb-3">
           <button type="button" className={tabClass(tab === 'users')} onClick={() => setTab('users')}>
             Users
           </button>
@@ -93,8 +93,8 @@ export function Admin() {
           </button>
         </div>
 
-        {error ? <p className="text-sm text-rose-400">{error}</p> : null}
-        {notice ? <p className="text-sm text-emerald-400">{notice}</p> : null}
+        {error ? <p className="text-sm text-rose-600">{error}</p> : null}
+        {notice ? <p className="text-sm text-emerald-700">{notice}</p> : null}
 
         {tab === 'users' ? (
           <UsersPanel

@@ -67,22 +67,22 @@ export function GrantAccessModal({ files, roles, groups, onClose, onDone, onErro
   )
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-lg border border-slate-700 bg-slate-950 p-5 shadow-xl">
-        <h2 className="text-lg font-medium text-white">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-gray-200 bg-white p-5 shadow-2xl">
+        <h2 className="text-lg font-medium text-gray-900">
           Grant access to {files.length} file{files.length === 1 ? '' : 's'}
         </h2>
 
         <div className="mt-3">
           <button
             type="button"
-            className="text-sm text-sky-400 hover:text-sky-300"
+            className="text-sm text-indigo-600 hover:text-indigo-700"
             onClick={() => setExpanded((v) => !v)}
           >
             {expanded ? 'Hide' : 'Show'} file list ({files.length})
           </button>
           {expanded ? (
-            <ul className="mt-2 max-h-32 overflow-y-auto text-sm text-slate-300">
+            <ul className="mt-2 max-h-32 overflow-y-auto text-sm text-gray-600">
               {files.map((f) => (
                 <li key={f.id} className="truncate">
                   {f.display_name}
@@ -94,13 +94,13 @@ export function GrantAccessModal({ files, roles, groups, onClose, onDone, onErro
               {files.slice(0, 4).map((f) => (
                 <span
                   key={f.id}
-                  className="rounded border border-slate-700 px-1.5 py-0.5 text-xs text-slate-400"
+                  className="rounded border border-gray-200 px-1.5 py-0.5 text-xs text-gray-500"
                 >
                   {f.display_name}
                 </span>
               ))}
               {files.length > 4 ? (
-                <span className="text-xs text-slate-500">+{files.length - 4} more</span>
+                <span className="text-xs text-gray-400">+{files.length - 4} more</span>
               ) : null}
             </div>
           )}
@@ -117,10 +117,10 @@ export function GrantAccessModal({ files, roles, groups, onClose, onDone, onErro
           <PermissionSelect value={permission} onChange={setPermission} disabled={busy} />
 
           <fieldset className="space-y-2">
-            <legend className="text-xs font-medium uppercase tracking-wide text-slate-400">
+            <legend className="text-xs font-medium uppercase tracking-wide text-gray-500">
               Mode
             </legend>
-            <label className="flex items-center gap-2 text-sm text-slate-300">
+            <label className="flex items-center gap-2 text-sm text-gray-600">
               <input
                 type="radio"
                 name="grant-mode"
@@ -130,7 +130,7 @@ export function GrantAccessModal({ files, roles, groups, onClose, onDone, onErro
               />
               Add or update access
             </label>
-            <label className="flex items-center gap-2 text-sm text-slate-300">
+            <label className="flex items-center gap-2 text-sm text-gray-600">
               <input
                 type="radio"
                 name="grant-mode"
@@ -141,11 +141,11 @@ export function GrantAccessModal({ files, roles, groups, onClose, onDone, onErro
               Replace all access
             </label>
             {mode === 'replace' ? (
-              <div className="space-y-2 rounded-md border border-amber-900/50 bg-amber-950/30 p-3">
-                <p className="text-sm text-amber-200">
+              <div className="space-y-2 rounded-lg border border-amber-200 bg-amber-50 p-3">
+                <p className="text-sm text-amber-700">
                   This removes other grants on each selected file.
                 </p>
-                <label className="flex items-center gap-2 text-sm text-slate-300">
+                <label className="flex items-center gap-2 text-sm text-gray-600">
                   <input
                     type="checkbox"
                     checked={confirmReplace}

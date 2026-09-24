@@ -27,7 +27,7 @@ export function FileAccessTable({
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-left text-sm">
-        <thead className="text-xs uppercase text-slate-500">
+        <thead className="text-xs uppercase text-gray-400">
           <tr>
             <th className="py-2 pr-2">
               <input
@@ -51,7 +51,7 @@ export function FileAccessTable({
             const total = file.access_total ?? preview.length
             const more = Math.max(0, total - preview.length)
             return (
-              <tr key={file.id} className="border-t border-slate-800">
+              <tr key={file.id} className="border-t border-gray-200">
                 <td className="py-2 pr-2">
                   <input
                     type="checkbox"
@@ -60,24 +60,24 @@ export function FileAccessTable({
                     aria-label={`Select ${file.display_name}`}
                   />
                 </td>
-                <td className="py-2 pr-3 font-medium text-slate-100">{file.display_name}</td>
-                <td className="py-2 pr-3 text-slate-300">{file.file_type}</td>
-                <td className="py-2 pr-3 text-slate-300">{formatBytes(file.size_bytes)}</td>
+                <td className="py-2 pr-3 font-medium text-gray-900">{file.display_name}</td>
+                <td className="py-2 pr-3 text-gray-600">{file.file_type}</td>
+                <td className="py-2 pr-3 text-gray-600">{formatBytes(file.size_bytes)}</td>
                 <td className="py-2 pr-3">
                   {total === 0 ? (
-                    <span className="text-slate-500">No access</span>
+                    <span className="text-gray-400">No access</span>
                   ) : (
                     <div className="flex flex-wrap gap-1">
                       {preview.map((g) => (
                         <span
                           key={`${g.principal_type}:${g.principal_id}`}
-                          className="rounded border border-slate-700 px-1.5 py-0.5 text-xs text-slate-300"
+                          className="rounded border border-gray-200 px-1.5 py-0.5 text-xs text-gray-600"
                         >
                           {g.principal_name} · {permissionLabel(g.permission)}
                         </span>
                       ))}
                       {more > 0 ? (
-                        <span className="text-xs text-slate-500">+{more} more</span>
+                        <span className="text-xs text-gray-400">+{more} more</span>
                       ) : null}
                     </div>
                   )}
@@ -88,7 +88,7 @@ export function FileAccessTable({
                 <td className="py-2">
                   <button
                     type="button"
-                    className="text-sky-400 hover:text-sky-300"
+                    className="text-indigo-600 hover:text-indigo-700"
                     onClick={() => onManage(file)}
                   >
                     Manage
@@ -99,7 +99,7 @@ export function FileAccessTable({
           })}
           {!loading && files.length === 0 ? (
             <tr>
-              <td colSpan={7} className="py-4 text-slate-500">
+              <td colSpan={7} className="py-4 text-gray-400">
                 No files match.
               </td>
             </tr>

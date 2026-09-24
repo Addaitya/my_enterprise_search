@@ -177,21 +177,21 @@ export function ManageAccessPanel({
   }
 
   return (
-    <form onSubmit={(e) => void onSave(e)} className="space-y-4 rounded-md border border-slate-800 p-4">
+    <form onSubmit={(e) => void onSave(e)} className="space-y-4 rounded-md border border-gray-200 p-4">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h2 className="text-lg font-medium text-white">{file.display_name}</h2>
-          <p className="text-sm text-slate-400">Roles & groups with access</p>
+          <h2 className="text-lg font-medium text-gray-900">{file.display_name}</h2>
+          <p className="text-sm text-gray-500">Roles & groups with access</p>
         </div>
-        <button type="button" className="text-sm text-slate-400 hover:text-slate-200" onClick={onClose}>
+        <button type="button" className="text-sm text-gray-500 hover:text-gray-900" onClick={onClose}>
           Close
         </button>
       </div>
 
-      {loading ? <p className="text-sm text-slate-500">Loading…</p> : null}
+      {loading ? <p className="text-sm text-gray-400">Loading…</p> : null}
 
       {!loading && drafts.length === 0 ? (
-        <p className="text-sm text-slate-500">No roles or groups can search this file yet.</p>
+        <p className="text-sm text-gray-400">No roles or groups can search this file yet.</p>
       ) : null}
 
       <ul className="space-y-2">
@@ -201,11 +201,11 @@ export function ManageAccessPanel({
             className="grid gap-2 sm:grid-cols-[1fr_7rem_auto] sm:items-end"
           >
             <div>
-              <span className="font-medium text-slate-100">
+              <span className="font-medium text-gray-900">
                 {draft.principal_name ||
                   nameFor(draft.principal_type, draft.principal_id, roles, groups)}
               </span>
-              <span className="ml-2 rounded border border-slate-700 px-1.5 py-0.5 text-xs text-slate-400">
+              <span className="ml-2 rounded border border-gray-200 px-1.5 py-0.5 text-xs text-gray-500">
                 {draft.principal_type === 'role' ? 'Role' : 'Group'}
               </span>
             </div>
@@ -218,7 +218,7 @@ export function ManageAccessPanel({
             />
             <button
               type="button"
-              className="mb-1 text-sm text-rose-400 hover:text-rose-300"
+              className="mb-1 text-sm text-rose-600 hover:text-rose-700"
               onClick={() => setDrafts((prev) => prev.filter((_, i) => i !== index))}
               disabled={busy}
             >
@@ -228,7 +228,7 @@ export function ManageAccessPanel({
         ))}
       </ul>
 
-      <div className="space-y-3 border-t border-slate-800 pt-4">
+      <div className="space-y-3 border-t border-gray-200 pt-4">
         <PrincipalPicker
           roles={roles}
           groups={groups}
@@ -261,16 +261,16 @@ export function ManageAccessPanel({
       </div>
 
       {job ? (
-        <div className="rounded-md border border-slate-700 bg-slate-900/60 px-3 py-2 text-sm text-slate-300">
+        <div className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-600">
           <p>
             Sync: <SyncStatusBadge job={job} />
             {job.total_chunks != null ? (
-              <span className="ml-2 text-xs text-slate-500">
+              <span className="ml-2 text-xs text-gray-400">
                 {job.updated_chunks ?? 0}/{job.total_chunks} chunks
               </span>
             ) : null}
           </p>
-          {job.error ? <p className="mt-1 text-rose-400">{job.error}</p> : null}
+          {job.error ? <p className="mt-1 text-rose-600">{job.error}</p> : null}
         </div>
       ) : null}
     </form>

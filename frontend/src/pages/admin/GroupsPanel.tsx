@@ -113,7 +113,7 @@ export function GroupsPanel({ groups, roles, onReload, onError, onNotice }: Prop
     <div className="space-y-8">
       <div className="grid gap-8 lg:grid-cols-[1fr_1.2fr]">
         <form onSubmit={(e) => void onCreate(e)} className="space-y-3">
-          <h2 className="text-lg font-medium text-white">Create group</h2>
+          <h2 className="text-lg font-medium text-gray-900">Create group</h2>
           <label className={labelClass}>
             Name (immutable)
             <input className={inputClass} value={name} onChange={(e) => setName(e.target.value)} required />
@@ -124,7 +124,7 @@ export function GroupsPanel({ groups, roles, onReload, onError, onNotice }: Prop
         </form>
 
         <table className="w-full text-left text-sm">
-          <thead className="text-xs uppercase text-slate-500">
+          <thead className="text-xs uppercase text-gray-400">
             <tr>
               <th className="py-2 pr-3">Name</th>
               <th className="py-2 pr-3">Path</th>
@@ -135,24 +135,24 @@ export function GroupsPanel({ groups, roles, onReload, onError, onNotice }: Prop
             {groups.map((group) => (
               <tr
                 key={group.id}
-                className={`border-t border-slate-800 ${
-                  selected?.id === group.id ? 'bg-slate-900/80' : ''
+                className={`border-t border-gray-200 ${
+                  selected?.id === group.id ? 'bg-indigo-50' : ''
                 }`}
               >
                 <td className="py-2 pr-3">
                   <button
                     type="button"
-                    className="font-medium text-slate-100 hover:text-sky-300"
+                    className="font-medium text-gray-900 hover:text-indigo-700"
                     onClick={() => setSelected(group)}
                   >
                     {group.name}
                   </button>
                 </td>
-                <td className="py-2 pr-3 text-slate-300">{group.path || '—'}</td>
+                <td className="py-2 pr-3 text-gray-600">{group.path || '—'}</td>
                 <td className="py-2">
                   <button
                     type="button"
-                    className="text-rose-400 hover:text-rose-300"
+                    className="text-rose-600 hover:text-rose-700"
                     onClick={() => void onDelete(group)}
                     disabled={busy}
                   >
@@ -175,9 +175,9 @@ export function GroupsPanel({ groups, roles, onReload, onError, onNotice }: Prop
             onError={onError}
             onNotice={onNotice}
           />
-          <section className="space-y-3 rounded-md border border-slate-800 p-4">
+          <section className="space-y-3 rounded-md border border-gray-200 p-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <h2 className="text-lg font-medium text-white">
+              <h2 className="text-lg font-medium text-gray-900">
                 File access — {selected.name}
               </h2>
               <Button type="button" onClick={() => setGrantOpen(true)} disabled={busy}>
@@ -185,7 +185,7 @@ export function GroupsPanel({ groups, roles, onReload, onError, onNotice }: Prop
               </Button>
             </div>
             <table className="w-full text-left text-sm">
-              <thead className="text-xs uppercase text-slate-500">
+              <thead className="text-xs uppercase text-gray-400">
                 <tr>
                   <th className="py-2 pr-3">File</th>
                   <th className="py-2 pr-3">Type</th>
@@ -195,14 +195,14 @@ export function GroupsPanel({ groups, roles, onReload, onError, onNotice }: Prop
               </thead>
               <tbody>
                 {grants.map((item) => (
-                  <tr key={item.acl_id} className="border-t border-slate-800">
-                    <td className="py-2 pr-3 text-slate-100">{item.display_name}</td>
-                    <td className="py-2 pr-3 text-slate-300">{item.file_type}</td>
-                    <td className="py-2 pr-3 text-slate-300">{permissionLabel(item.permission)}</td>
+                  <tr key={item.acl_id} className="border-t border-gray-200">
+                    <td className="py-2 pr-3 text-gray-900">{item.display_name}</td>
+                    <td className="py-2 pr-3 text-gray-600">{item.file_type}</td>
+                    <td className="py-2 pr-3 text-gray-600">{permissionLabel(item.permission)}</td>
                     <td className="py-2">
                       <button
                         type="button"
-                        className="text-rose-400 hover:text-rose-300"
+                        className="text-rose-600 hover:text-rose-700"
                         onClick={() => void onRemoveGrant(item)}
                         disabled={busy}
                       >
@@ -213,7 +213,7 @@ export function GroupsPanel({ groups, roles, onReload, onError, onNotice }: Prop
                 ))}
                 {grants.length === 0 ? (
                   <tr>
-                    <td colSpan={4} className="py-3 text-slate-500">
+                    <td colSpan={4} className="py-3 text-gray-400">
                       No files granted yet.
                     </td>
                   </tr>
@@ -221,13 +221,13 @@ export function GroupsPanel({ groups, roles, onReload, onError, onNotice }: Prop
               </tbody>
             </table>
             {grantsTotal > grants.length ? (
-              <p className="text-xs text-slate-500">Showing {grants.length} of {grantsTotal}</p>
+              <p className="text-xs text-gray-400">Showing {grants.length} of {grantsTotal}</p>
             ) : null}
             <JobTray jobIds={jobIds} onNotice={onNotice} onError={onError} />
           </section>
         </div>
       ) : (
-        <p className="text-sm text-slate-500">Select a group to view members and file access.</p>
+        <p className="text-sm text-gray-400">Select a group to view members and file access.</p>
       )}
 
       {grantOpen && selected ? (

@@ -1,7 +1,7 @@
 export const inputClass =
-  'mt-1 w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:border-sky-500 focus:outline-none'
+  'mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-indigo-400 focus:outline-none'
 
-export const labelClass = 'block text-xs font-medium uppercase tracking-wide text-slate-400'
+export const labelClass = 'block text-xs font-medium uppercase tracking-wide text-gray-500'
 
 export function permissionLabel(permission: string): string {
   return permission === 'editor' ? 'Editor' : 'Viewer'

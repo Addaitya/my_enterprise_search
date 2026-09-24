@@ -104,9 +104,9 @@ export function GrantFilesModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-lg border border-slate-700 bg-slate-950 p-5 shadow-xl">
-        <h2 className="text-lg font-medium text-white">Grant files…</h2>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-gray-200 bg-white p-5 shadow-2xl">
+        <h2 className="text-lg font-medium text-gray-900">Grant files…</h2>
         <div className="mt-4 space-y-4">
           <PrincipalPicker
             roles={roles}
@@ -126,12 +126,12 @@ export function GrantFilesModal({
               disabled={busy}
             />
           </label>
-          <div className="max-h-48 overflow-y-auto rounded-md border border-slate-800">
-            {loading ? <p className="px-3 py-2 text-sm text-slate-500">Loading…</p> : null}
+          <div className="max-h-48 overflow-y-auto rounded-md border border-gray-200">
+            {loading ? <p className="px-3 py-2 text-sm text-gray-400">Loading…</p> : null}
             {files.map((file) => (
               <label
                 key={file.id}
-                className="flex cursor-pointer items-center gap-2 border-b border-slate-900 px-3 py-2 text-sm text-slate-300 last:border-0 hover:bg-slate-900"
+                className="flex cursor-pointer items-center gap-2 border-b border-gray-100 px-3 py-2 text-sm text-gray-600 last:border-0 hover:bg-white"
               >
                 <input
                   type="checkbox"
@@ -143,7 +143,7 @@ export function GrantFilesModal({
               </label>
             ))}
             {!loading && files.length === 0 ? (
-              <p className="px-3 py-2 text-sm text-slate-500">No files</p>
+              <p className="px-3 py-2 text-sm text-gray-400">No files</p>
             ) : null}
           </div>
           <ImpactPreview

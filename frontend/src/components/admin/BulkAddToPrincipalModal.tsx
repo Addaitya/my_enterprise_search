@@ -74,22 +74,22 @@ export function BulkAddToPrincipalModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-lg border border-slate-700 bg-slate-950 p-5 shadow-xl">
-        <h2 className="text-lg font-medium text-white">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-gray-200 bg-white p-5 shadow-2xl">
+        <h2 className="text-lg font-medium text-gray-900">
           Add {users.length} user{users.length === 1 ? '' : 's'} to a {kind}
         </h2>
         <div className="mt-3 flex flex-wrap gap-1">
           {users.slice(0, 6).map((u) => (
             <span
               key={u.id}
-              className="rounded border border-slate-700 px-1.5 py-0.5 text-xs text-slate-400"
+              className="rounded border border-gray-200 px-1.5 py-0.5 text-xs text-gray-500"
             >
               {u.username}
             </span>
           ))}
           {users.length > 6 ? (
-            <span className="text-xs text-slate-500">+{users.length - 6} more</span>
+            <span className="text-xs text-gray-400">+{users.length - 6} more</span>
           ) : null}
         </div>
         <div className="mt-4 space-y-4">

@@ -142,10 +142,10 @@ export function AccessPanel({ roles, groups, onError, onNotice }: Props) {
           <Button type="button" onClick={() => setRevokeOpen(true)}>
             Revoke access…
           </Button>
-          <span className="text-sm text-slate-400">{selectedIds.size} selected</span>
+          <span className="text-sm text-gray-500">{selectedIds.size} selected</span>
           <button
             type="button"
-            className="text-sm text-slate-400 hover:text-slate-200"
+            className="text-sm text-gray-500 hover:text-gray-900"
             onClick={() => setSelectedIds(new Set())}
           >
             Clear
