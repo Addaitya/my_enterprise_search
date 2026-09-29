@@ -2,9 +2,9 @@ from pydantic import BaseModel, Field
 
 
 class AdminStatsPlaceholders(BaseModel):
-    active_connectors: bool = True
-    ingestion_rate_docs_per_hour: bool = True
-    last_sync: bool = True
+    active_connectors: bool = False
+    ingestion_rate_docs_per_hour: bool = False
+    last_sync: bool = False
 
 
 class AdminStatsOut(BaseModel):

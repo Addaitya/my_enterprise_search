@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import sys
 import time
+import uuid
+from datetime import datetime
 
 import httpx
 from sqlalchemy import text
@@ -68,6 +70,23 @@ def _get_stats(headers: dict[str, str] | None = None) -> httpx.Response:
     return httpx.get(f"{API}/admin/stats", headers=headers or {}, timeout=30)
 
 
+def _sql_int(sql: str) -> int:
+    with Session(bind=get_engine()) as db:
+        return int(db.execute(text(sql)).scalar() or 0)
+
+
+def _last_sync_ok(value: object) -> bool:
+    if value == "\u2014":
+        return True
+    if not isinstance(value, str) or not value:
+        return False
+    try:
+        datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    return True
+
+
 def _non_admin_token(admin_headers: dict[str, str]) -> tuple[str, str]:
     """Return (token, label) for a product user without realm role admin.
 
@@ -115,25 +134,65 @@ def main() -> int:
     _assert(r.status_code == 403, f"proof2 expected 403 got {r.status_code} {r.text}")
     print(f"[ok] 2: {non_admin_name} GET /admin/stats → 403")
 
-    # 3: admin → 200 with live ints + placeholder constants
+    # 3: admin → 200 with live connector, rate, and last-sync values
     r = _get_stats(admin_h)
     _assert(r.status_code == 200, f"proof3 expected 200 got {r.status_code} {r.text}")
     body = r.json()
     _assert(isinstance(body.get("total_docs_indexed"), int), f"proof3 docs {body}")
     _assert(isinstance(body.get("total_data_ingested_bytes"), int), f"proof3 bytes {body}")
     _assert(body["total_data_ingested_bytes"] >= 0, f"proof3 bytes negative {body}")
-    _assert(body.get("active_connectors") == 8, f"proof3 connectors {body}")
-    _assert(body.get("ingestion_rate_docs_per_hour") == 12400, f"proof3 rate {body}")
-    _assert(body.get("last_sync") == "2 min ago", f"proof3 last_sync {body}")
+    enabled = _sql_int("SELECT count(*) FROM connectors WHERE enabled")
+    rate = _sql_int(
+        "SELECT count(*) FROM ingest_jobs "
+        "WHERE status = 'completed' AND completed_at >= now() - interval '1 hour'"
+    )
+    _assert(isinstance(body.get("active_connectors"), int), f"proof3 connectors {body}")
+    _assert(body["active_connectors"] == enabled, f"proof3 connectors {body} sql={enabled}")
+    _assert(isinstance(body.get("ingestion_rate_docs_per_hour"), int), f"proof3 rate {body}")
+    _assert(body["ingestion_rate_docs_per_hour"] == rate, f"proof3 rate {body} sql={rate}")
+    _assert(_last_sync_ok(body.get("last_sync")), f"proof3 last_sync {body}")
     placeholders = body.get("placeholders") or {}
-    _assert(placeholders.get("active_connectors") is True, f"proof3 ph connectors {body}")
-    _assert(placeholders.get("ingestion_rate_docs_per_hour") is True, f"proof3 ph rate {body}")
-    _assert(placeholders.get("last_sync") is True, f"proof3 ph last_sync {body}")
+    _assert(placeholders.get("active_connectors") is False, f"proof3 ph connectors {body}")
+    _assert(placeholders.get("ingestion_rate_docs_per_hour") is False, f"proof3 ph rate {body}")
+    _assert(placeholders.get("last_sync") is False, f"proof3 ph last_sync {body}")
     _assert("avg_query_time_ms" in body, f"proof3 missing avg {body}")
+    job_id = uuid.uuid4()
+    file_id = uuid.uuid4()
+    try:
+        with Session(bind=get_engine()) as db:
+            db.execute(
+                text(
+                    """
+                    INSERT INTO ingest_jobs (
+                        id, file_id, object_store_path, ingestion_type, original_source,
+                        filename, size_bytes, status, completed_at, created_at, updated_at
+                    ) VALUES (
+                        :id, :file_id, :path, 'pipeline', :source,
+                        'stats-rate.txt', 4, 'completed', now(), now(), now()
+                    )
+                    """
+                ),
+                {
+                    "id": job_id,
+                    "file_id": file_id,
+                    "path": f"files/pipeline/{file_id}/stats-rate.txt",
+                    "source": f"proof://stats/{file_id}",
+                },
+            )
+            db.commit()
+        bumped = _get_stats(admin_h)
+        _assert(bumped.status_code == 200, f"proof3b {bumped.status_code} {bumped.text}")
+        bumped_rate = bumped.json().get("ingestion_rate_docs_per_hour")
+        _assert(bumped_rate == rate + 1, f"proof3b rate {rate} -> {bumped_rate}")
+    finally:
+        with Session(bind=get_engine()) as db:
+            db.execute(text("DELETE FROM ingest_jobs WHERE id = :id"), {"id": job_id})
+            db.commit()
     print(
         f"[ok] 3: admin GET /admin/stats → 200 "
         f"docs={body['total_docs_indexed']} bytes={body['total_data_ingested_bytes']} "
-        f"avg={body['avg_query_time_ms']}"
+        f"connectors={body['active_connectors']} rate={body['ingestion_rate_docs_per_hour']} "
+        f"last_sync={body['last_sync']!r} avg={body['avg_query_time_ms']}"
     )
 
     # 4: successful POST /search then avg is non-null

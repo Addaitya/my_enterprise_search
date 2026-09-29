@@ -1,0 +1,111 @@
+---
+status: reference
+title: Pipeline contract with this backend
+date: 2026-09-28
+notes: Interface for the external ingestion pipeline. Not product truth. Product truth is prompt_2/current.md. The pipeline service is not in this repo.
+---
+
+# Pipeline contract with this backend
+
+HTTP contract for the service at `INGESTION_PIPELINE_URL`. That service is not in this repo. Admins talk only to this API, which mirrors connectors and forwards connection fields. An empty pipeline URL returns 503 to the admin and never calls you.
+
+## Contents
+
+- [Endpoints the pipeline serves](#endpoints-the-pipeline-serves)
+- [Calling this API](#calling-this-api)
+- [Reserve](#reserve)
+- [Complete](#complete)
+- [Sync status](#sync-status)
+- [Sequence and gap](#sequence-and-gap)
+
+| Direction | Auth |
+| --- | --- |
+| This API calls the pipeline (create, update, sync) | No `Authorization` header. |
+| The pipeline calls this API (files, sync status) | Client-credentials token, realm role `ingest-service`. |
+
+The pipeline owns credentials, scheduling, extraction, and chunk text. Bytes move only through the presigned URL from reserve. This API assigns the object key, records the file, and indexes chunks. Search hides the file until an admin grants access. It still appears in Access Control. A later reserve of the same source reloads role and group names onto the chunks.
+
+## Endpoints the pipeline serves
+
+One attempt, timeout 10 seconds (`INGESTION_PIPELINE_TIMEOUT_SECONDS`). No retries. A non-2xx body is discarded. There is no list, get, or delete. Keep the `id` you return stable: update and sync call that same id.
+
+| Call | Body | Success |
+| --- | --- | --- |
+| `POST /connectors` | `type`, `name`, `enabled`, `schedule`, `config` | JSON object with a non-empty string `id` (your connector id). A bare string, an empty `id`, or any other 2xx stores nothing. |
+| `PATCH /connectors/{pipeline_id}` | Same fields, only those that changed | Any 2xx. Body ignored. |
+| `POST /connectors/{pipeline_id}/sync` | `{}` | Any 2xx. Body ignored. Return quickly; the sync stays open until the status callback. A failed call is already marked failed, so no callback is expected. |
+
+Create always includes all five keys. `enabled` is a boolean (default false). `schedule` may be JSON `null`. `config` may be `{}`. If the mirror insert fails after a successful create, you may keep an orphan connector.
+
+`config` is string-keyed, secrets included, and is not stored here. Create sends every catalog field (`""` if blank). Toggles and `cdc` are `"true"` or `"false"`. Update sends only filled fields: a missing secret stays, a present key replaces it. `schedule` is opaque text, or `null`. `enabled: false` still receives Sync Now.
+
+Catalog types: `postgresql`, `oracle`, `sqlserver`, `sharepoint`, `salesforce`, `s3`, `azure`, `gcs`, `email`, `box`, `sap`. `config` keys match that form. Unknown types are forwarded if you accept them. `google_drive` is a legal file `ingestion_type` and is not a catalog type.
+
+## Calling this API
+
+```http
+POST {KEYCLOAK_URL}/realms/enterprise-search-realm/protocol/openid-connect/token
+grant_type=client_credentials
+client_id=ingest-client
+client_secret={KEYCLOAK_INGEST_SECRET}
+```
+
+Audience must be `api-client`, role `ingest-service`. Request a new token when it expires. Missing bearer is 401. Any other role, including realm `admin`, is 403. Demo secret: `ingest-client-secret`. Base URL has no `/api` prefix (`http://localhost:8000` on the host). No object-store, database, or search credentials are issued.
+
+### Reserve
+
+`POST /internal/ingest/files` with `Content-Type: application/json` → 201. Extra fields are 422, including `file_id`, `allowed_roles`, `allowed_groups`, `embedding`, and `object_store_path`.
+
+| Field | Rule |
+| --- | --- |
+| `filename` | Stored as the basename. `reports/q1.pdf` becomes `q1.pdf`. Empty, `.`, and `..` are 422. |
+| `size_bytes` | At least 1. Above 100 MiB (`104857600`) is 413. |
+| `ingestion_type` | `local`, `sharepoint`, `google_drive`, `s3`, `postgresql`, `oracle`, `sqlserver`, `salesforce`, `azure`, `gcs`, `email`, `box`, `sap`, or `pipeline`. Use the connector type when it is in this list. |
+| `original_source` | Required stable source URI. Leading and trailing space is stripped. With `ingestion_type`, this is the file identity. A new URI is a new file with no grants. |
+| `content_type` | Optional. Ignored. |
+
+201 body: `file_id`, `object_store_path` (`files/{ingestion_type}/{file_id}/{name}`), `upload_url`, `expires_at` (UTC, default 1 hour). Each call adds a job and reuses `file_id` when a file exists or the newest job is `reserved` or `failed`. Complete uses that newest job only. A second reserve before complete replaces the path and size you must PUT. A new filename changes that job’s path. The stored path updates only after complete succeeds.
+
+PUT the raw bytes to `upload_url` before expiry. Send exactly `size_bytes` bytes and no `Authorization` header; an extra header breaks the signature. `Content-Type: application/octet-stream` is enough. Host is `MINIO_PRESIGN_ENDPOINT` (default `minio:9000`). If that name does not resolve, start this API with `MINIO_PRESIGN_ENDPOINT=localhost:9000`. After expiry, reserve again and PUT the new URL.
+
+### Complete
+
+`POST /internal/ingest/files/{file_id}/complete`. You send the chunk text. JSON body.
+
+| Field | Rule |
+| --- | --- |
+| `size_bytes` | Must match the stored object and the newest reserved size. |
+| `file_type` | Extension, 1–32 characters, no dot or slash. Any extension is allowed. |
+| `chunks` | Non-empty `{ "seq": int >= 0, "content": non-empty string }`. `seq` unique. |
+
+201 returns `file_id`, `status` `completed`, `object_store_path`, `file_type`, `size_bytes`, `ingestion_type`, `chunk_count`. Chunk id is `{file_id}:{seq:06d}`. The same id is overwritten on a later complete. Seqs you leave out stay indexed, so a shorter re-sync leaves stale hits. This API fills the vector. Omit `embedding`.
+
+| Result | Next step |
+| --- | --- |
+| 201 | Done. |
+| 409 `already completed` (same size) | Already indexed. Stop. |
+| 409 different size, or job `failed` / `expired` | Reserve again, PUT the new URL, complete. |
+| 404 | Reserve first. |
+| 409 `object not found` | Newest job stays `reserved`. PUT that job’s URL, then complete. |
+| 422 size mismatch | Job stays `reserved`. PUT the reserved size, or reserve again with the real size. |
+| 502 | Object store error. Complete again later. |
+| 500 | Save failed. Job is `failed`. Reserve again. Grants on that file can be dropped. The object remains. |
+
+### Sync status
+
+`POST /internal/connectors/{connector_id}/status`. `connector_id` is this API’s connector UUID, not your `pipeline_id`.
+
+Body: `status` (`success` or `failed`), optional `files_count` (zero is allowed), `error`, `finished_at`, `started_at`. Extra fields are 422. `finished_at` is last sync (now, if omitted). `started_at` is ignored. `success` clears the stored error. On `failed`, send `error` or the admin sees a blank failure. Unknown UUID is 404. 200 returns the connector without `config`.
+
+This closes only the newest open sync. A second Sync Now leaves the older row `syncing`. If none is open, the connector still updates and the response is 200. One file failure does not close the sync. Call this when the run finishes. It sets last sync. Completes in the past hour count toward ingest rate. Enabled connectors count as active. `files_count` is whatever count you choose to report.
+
+## Sequence and gap
+
+1. `POST /connectors` and return `{ "id": "<yours>" }`.
+2. `POST /connectors/{your id}/sync` with `{}` and return 2xx.
+3. Per object: reserve, PUT, complete.
+4. `POST /internal/connectors/{backend uuid}/status`.
+
+Create and sync omit this API’s connector UUID, and the sync response is ignored, so the status URL’s id is not available. Do not read this API’s database to find it. Also absent: source delete, file delete, connector delete, and content-hash identity.
+
+Check: reserve `pipeline` with a new `original_source`, PUT, complete with `file_type` `log` and one chunk. A second reserve returns the same `file_id`. Another complete is 409 `already completed`.
