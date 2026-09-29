@@ -50,6 +50,26 @@ _validate_env_file() {
   return 0
 }
 
+# Append a key the sample gained after .env was first copied.
+# A key that is already set is left as-is. Do not rotate secrets.
+_append_missing_key() {
+  local file="$1"
+  local key="$2"
+  local sample="$3"
+  local line
+
+  if _env_has_key "${file}" "${key}"; then
+    log_verbose "${key} already set in ${file}"
+    return 0
+  fi
+  line="$(grep -E "^${key}=" "${sample}" | head -1 || true)"
+  if [[ -z "${line}" ]]; then
+    die "env sample ${sample} has no ${key}" "${EXIT_ENV}"
+  fi
+  printf '\n%s\n' "${line}" >> "${file}"
+  info "appended ${key} to ${file} (existing keys unchanged)"
+}
+
 _copy_env() {
   local src="$1"
   local dest="$2"
@@ -85,6 +105,7 @@ prepare_env() {
 
   _copy_env "${root_sample}" "${root_env}" "${force}"
   _copy_env "${fe_sample}" "${fe_env}" "${force}"
+  _append_missing_key "${root_env}" KEYCLOAK_INGEST_SECRET "${root_sample}"
 
   local bad=0
   _validate_env_file "${root_env}" "${_ROOT_ENV_KEYS[@]}" || bad=1
@@ -93,5 +114,17 @@ prepare_env() {
     die "Env validation failed (fix keys or use --force-env from samples)" "${EXIT_ENV}"
   fi
 
+  ok "env files"
+}
+
+# Root .env only. Used by setup/internal_ingest.sh. Does not touch frontend/.env.
+ensure_internal_ingest_env() {
+  local root_env="${REPO_ROOT}/.env"
+  local root_sample="${REPO_ROOT}/backend/.env.sample"
+
+  _copy_env "${root_sample}" "${root_env}" 0
+  _append_missing_key "${root_env}" KEYCLOAK_INGEST_SECRET "${root_sample}"
+  _validate_env_file "${root_env}" "${_ROOT_ENV_KEYS[@]}" \
+    || die "Env validation failed (fix keys or copy backend/.env.sample)" "${EXIT_ENV}"
   ok "env files"
 }

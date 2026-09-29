@@ -19,7 +19,7 @@ One-command bootstrap from the repo root:
 7. `bun install`
 8. Optional ACL seed / proofs / `./start-dev.sh`
 
-Re-runs are safe (idempotent). Existing `.env` files are **not** overwritten unless `--force-env`.
+Re-runs are safe (idempotent). Existing `.env` files are **not** overwritten unless `--force-env`. A root `.env` created before internal ingest is missing `KEYCLOAK_INGEST_SECRET`; setup appends that one key from the sample and leaves every other key as it is.
 
 ## Flags
 
@@ -39,6 +39,18 @@ Re-runs are safe (idempotent). Existing `.env` files are **not** overwritten unl
 | `-v` / `--verbose` | Extra logs |
 
 Wait timeouts: Keycloak/OpenSearch **180s**, Postgres/MinIO **60s**. Override with `SETUP_WAIT_TIMEOUT_S` or `SETUP_WAIT_*_S`.
+
+## Internal ingest interface
+
+For a stack that is already up, apply the machine-ingest client, schema, and Keycloak client without a full bootstrap:
+
+```bash
+./setup/internal_ingest.sh
+```
+
+This starts the existing Compose services, runs `alembic upgrade head`, and runs `init_services` so an already-imported realm gets `ingest-client`. A Keycloak restart does not reimport `realm.json`. It does not start a pipeline container, does not set `INGESTION_PIPELINE_URL` (empty stays 503), and does not rotate a secret that is already set. `--skip-compose` assumes the stack is up. `--no-verify` skips the schema and token check.
+
+Restart `./start-dev.sh` afterward so the API reloads `.env`.
 
 ## Manual fallback
 

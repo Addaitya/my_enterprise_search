@@ -52,7 +52,15 @@ Primary path — one command from the repo root ([setup/README.md](setup/README.
 ./setup/setup.sh --with-seed --start
 ```
 
-This checks prereqs, copies env samples if missing, brings Compose up, waits for services, runs Alembic + `init_services`, installs frontend deps, and prints URLs / seed users. Re-runs are idempotent; existing `.env` files are not overwritten unless `--force-env`.
+This checks prereqs, copies env samples if missing, brings Compose up, waits for services, runs Alembic + `init_services`, installs frontend deps, and prints URLs / seed users. Re-runs are idempotent; existing `.env` files are not overwritten unless `--force-env`. A missing `KEYCLOAK_INGEST_SECRET` is appended from the sample.
+
+An already-running stack can pick up the internal ingest interface without a full bootstrap:
+
+```bash
+./setup/internal_ingest.sh
+```
+
+That starts the existing Compose services, migrates, and creates `ingest-client` on a realm Keycloak will not reimport. It does not start a pipeline container and leaves `INGESTION_PIPELINE_URL` empty (connector create and sync stay **503**). Restart `./start-dev.sh` so the API reloads `.env`.
 
 ### Manual fallback
 
