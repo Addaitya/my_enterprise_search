@@ -10,6 +10,12 @@ Live values:
 - `total_data_ingested_bytes` — sum of object sizes in bucket `enterprise-search-files`. Empty bucket is 0. A MinIO error is not reported as 0.
 - `total_docs_indexed` — `COUNT(*)` from `files`.
 
-Placeholders (constants, `placeholders.* = true`): `active_connectors = 8`, `ingestion_rate_docs_per_hour = 12400`, `last_sync = "2 min ago"`. OpenSearch is not queried when stats are read.
+Live connector stats (`placeholders.* = false`):
+
+- `active_connectors` — `COUNT(*)` of `connectors` where `enabled` is true.
+- `ingestion_rate_docs_per_hour` — `COUNT(*)` of `ingest_jobs` with `status=completed` and `completed_at` in the last hour.
+- `last_sync` — max `connectors.last_sync_at` as ISO-8601, or `—` when none.
+
+The dashboard page still shows static placeholder cards for p99, searches today, and total sources, plus a static connector table and static index bars. Those are not from this API. OpenSearch is not queried when stats are read.
 
 Alembic `c3d4e5f6a7b8` revises the ACL jobs revision.

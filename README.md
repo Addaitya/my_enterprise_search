@@ -2,9 +2,9 @@
 
 Company-internal hybrid search (keyword + semantic) over uploaded files, with role- and group-based access control. v1 accepts local **PDF / TXT / CSV** uploads.
 
-**Now:** Compose stack, Keycloak PKCE login, FastAPI JWT, OpenSearch 3.8 JWKS + `files_searcher` DLS, Postgres identity mirror + `files` / `file_acl` / `upload_sessions` / `search_query_metrics`, resumable ingest API, **ops folder ingest CLI**, React multi-file `/upload`, **client-hybrid `POST /search`**, ACL-filtered **View files** + **Open** (MinIO stream), admin **Dashboard** (live stats + placeholders), **Access Control(Admin)** (Users / Roles / Groups / Access), **Configuration** local placeholder shell (ingestion is not built).
+**Now:** Compose stack, Keycloak PKCE login, FastAPI JWT, OpenSearch 3.8 JWKS + `files_searcher` DLS, Postgres identity mirror + `files` / `file_acl` / `upload_sessions` / `search_query_metrics` / `ingest_jobs` / `connectors` / `connector_syncs`, resumable ingest API, **ops folder ingest CLI**, **internal ingest API** (`ingest-client`, presigned PUT, complete indexes chunks), React multi-file `/upload`, **client-hybrid `POST /search`**, ACL-filtered **View files** + **Open** (MinIO stream), admin **Dashboard** (live stats; connector count, ingest rate, and last sync are live; other cards stay placeholders), **Access Control(Admin)** (Users / Roles / Groups / Access), **admin connector control plane** (BFF + Postgres mirror; the pipeline service is not in this repo), **Configuration** ingestion on `/admin/connectors` (other sections stay local placeholders).
 
-**Not yet:** Check-access explorer / audit CSV, Task 7 SKIP LOCKED + dual-write repair, native OpenSearch `hybrid`+DLS (needs 3.9+; product path uses client-side merge on 3.8), connector ingestion pipeline (dashboard connector / rate / last-sync stay API placeholders), content-hash dedup, auto-ACL after ingest.
+**Not yet:** Check-access explorer / audit CSV, Task 7 SKIP LOCKED + dual-write repair, native OpenSearch `hybrid`+DLS (needs 3.9+; product path uses client-side merge on 3.8), content-hash dedup, auto-ACL after ingest.
 
 ## Stack
 
@@ -16,7 +16,7 @@ Company-internal hybrid search (keyword + semantic) over uploaded files, with ro
 | Search | OpenSearch 3.8.0 (ML Commons MiniLM ONNX embeddings; JWT via Keycloak JWKS) |
 | Storage | PostgreSQL 16 (identity mirror, file metadata, ACL, upload sessions), MinIO (bytes) |
 
-Request auth stays on the **JWT**. Postgres identity is a one-way Keycloak projection. File ACL lives only in Postgres (`viewer` / `editor` on a role or group). HTTP uploads and the folder CLI index chunks with **empty** ACL — searchable / listable only after an admin grant (Access tab / bulk APIs) or the optional seed script. Admin is the Keycloak realm role `admin` (does **not** bypass file ACL).
+Request auth stays on the **JWT**. Postgres identity is a one-way Keycloak projection. File ACL lives only in Postgres (`viewer` / `editor` on a role or group). HTTP uploads, the folder CLI, and `/internal` complete index chunks with **empty** ACL — searchable / listable only after an admin grant (Access tab / bulk APIs) or the optional seed script. Admin is the Keycloak realm role `admin` (does **not** bypass file ACL). `/internal/*` requires realm role `ingest-service`. OpenSearch writes on that path stay basic `admin`. Connector secrets are not stored in Postgres.
 
 ### Search on OpenSearch 3.8
 
@@ -103,11 +103,13 @@ Vite proxies `/api` → FastAPI. Sign in, then:
 - **Folder ingest** (ops CLI, no JWT) — walk a directory of PDF/TXT/CSV into the same stores as HTTP complete (not 25 MiB-capped)
 - **Search** (`/`) — hybrid search + Open download
 - **View files** (`/files`) — ACL-filtered list + Open
-- **Dashboard** (`/dashboard`, realm `admin`) — six KPIs from `GET /admin/stats`
+- **Dashboard** (`/dashboard`, realm `admin`) — live stats from `GET /admin/stats`, including connector count, ingest rate, and last sync
 - **Access Control(Admin)** (`/admin`, realm `admin`) — Users / Roles / Groups / Access (file grants + members)
-- **Configuration** (`/configuration`, realm `admin`) — local placeholder shell; does not ingest
+- **Configuration** (`/configuration`, realm `admin`) — Ingestion talks to `/admin/connectors`. Other sections stay local placeholders.
 
-`GET /health` is public. Product routes (`/auth/me`, `/search`, `/files*`, `/files/uploads*`) require a Bearer token. Admin identity/ACL routes and `GET /admin/stats` require realm role `admin`. The folder CLI talks to Postgres / MinIO / OpenSearch directly — no JWT and no `/files/uploads` session.
+`GET /health` is public. Product routes (`/auth/me`, `/search`, `/files*`, `/files/uploads*`) require a Bearer token. Admin identity/ACL routes, `GET /admin/stats`, and `/admin/connectors` require realm role `admin`. `/internal/*` requires realm role `ingest-service` (client `ingest-client`, secret `KEYCLOAK_INGEST_SECRET`). The folder CLI talks to Postgres / MinIO / OpenSearch directly — no JWT and no `/files/uploads` session.
+
+`MINIO_PRESIGN_ENDPOINT` defaults to `minio:9000` (the host inside the presigned PUT URL). Set it to `localhost:9000` only when a process on the host must PUT that URL. An empty `INGESTION_PIPELINE_URL` makes connector create and sync return **503**. A URL that does not connect returns **502**, and no connector row is kept.
 
 ### Folder ingest (ops CLI)
 
@@ -141,7 +143,7 @@ cd backend && uv run python -m init_services
 | `realm-admin` | `adminpass` | Search + Admin |
 | `searcher` | `searcherpass` | Search only |
 
-SPA client: `web-client`. API and OpenSearch audience: `api-client`.
+SPA client: `web-client`. API and OpenSearch audience: `api-client`. Machine ingest client: `ingest-client` (realm role `ingest-service` only; secret `KEYCLOAK_INGEST_SECRET`).
 
 After a successful mirror you should see seed users plus Keycloak built-ins and the `api-client` service account (typically users=3, roles=5, groups=`engineering` + `_empty`).
 
@@ -151,11 +153,20 @@ Navbar (realm `admin` only): Search | Upload | View files | **Dashboard** | **Ac
 
 | Page | Path | What it does |
 | --- | --- | --- |
-| **Dashboard** | `/dashboard` | Six values from `GET /admin/stats`. Live: avg **OpenSearch** query time (**last 24 hours** of successful `POST /search`; `—` if none), MinIO bucket size, `COUNT(*)` of `files`. API placeholders until the connector pipeline: active connectors `8`, ingest rate `12,400 docs/hr`, last sync `"2 min ago"`. The page also shows static placeholder cards (p99, searches today, total sources), a static connector table, and static index bars. Those are not from the API. MinIO list failure → **502**. |
+| **Dashboard** | `/dashboard` | Six values from `GET /admin/stats`. Live: avg **OpenSearch** query time (**last 24 hours** of successful `POST /search`; `—` if none), MinIO bucket size, `COUNT(*)` of `files`, enabled connector count, completed `ingest_jobs` in the last hour (`docs/hr`), and the latest `connectors.last_sync_at` (`—` if none). The page also shows static placeholder cards (p99, searches today, total sources), a static connector table, and static index bars. Those are not from the API. MinIO list failure → **502**. |
 | **Access Control(Admin)** | `/admin` | Identity + file ACL (tabs unchanged). Label only — URL, `Admin.tsx`, and `/admin/*` APIs stay. |
-| **Configuration** | `/configuration` | Local placeholder shell. Ingestion edits stay in the browser and are not connected. The other sections are not built. No settings API. Connector count, rate, and last sync stay the dashboard API placeholders. |
+| **Configuration** | `/configuration` | Ingestion lists, creates, updates, and syncs connectors through `/admin/connectors`. Saved connection fields are not shown again. Other sections are local placeholders and are not saved. |
 
-Successful searches persist OpenSearch `took` (no query text) into `search_query_metrics` — client_hybrid stores match+neural; native_hybrid stores the single query. API `took_ms` stays wall-clock. Migrate with `uv run alembic upgrade head` (`c3d4e5f6a7b8`). Proof: `uv run python -m scripts.admin_stats_proof`.
+Successful searches persist OpenSearch `took` (no query text) into `search_query_metrics` — client_hybrid stores match+neural; native_hybrid stores the single query. API `took_ms` stays wall-clock. Migrate with `uv run alembic upgrade head` (`c3d4e5f6a7b8` then `d4e5f6a7b8c9`). Proofs: `uv run python -m scripts.admin_stats_proof` and `uv run python -m scripts.internal_ingest_proof`.
+
+### Human test (connectors)
+
+Sign in as `realm-admin` / `adminpass` after `uv run alembic upgrade head` and `uv run python -m init_services`. Root `.env` needs `KEYCLOAK_INGEST_SECRET`.
+
+1. `/dashboard` — Active connectors, ingestion rate, and last sync have no Placeholder badge. With no connectors the count is 0 and last sync is `—`. p99, searches today, and total sources still show Placeholder.
+2. `/configuration` → Ingestion — the list comes from the API (empty until a pipeline accepts a create). No section Placeholder badge.
+3. With `INGESTION_PIPELINE_URL` empty, add a connector and save. The page says the pipeline URL is not configured. Refresh: the list stays empty.
+4. Set `INGESTION_PIPELINE_URL=http://127.0.0.1:9`, restart the API, add again. The page says the pipeline is unreachable. Refresh: the connector is not listed. Unset the URL and restart when finished.
 
 ### Admin file access + members
 
@@ -190,8 +201,11 @@ File A gets role `search-user` viewer; file B gets group `engineering` viewer (a
 | `file_acl` | One principal per row (`user_id` **or** `role_id` **or** `group_id`). Permission `viewer` \| `editor`. v1 product grants target roles and groups; `user_id` is reserved for later connectors. |
 | `upload_sessions` | Resumable upload state (local staging path, bytes received, status). TTL 24h. |
 | `search_query_metrics` | Successful `POST /search` OpenSearch `took` (`took_ms`, `created_at`). Unbounded; dashboard averages the last 24 hours. No query text. |
+| `ingest_jobs` | Machine ingest reserve before a `files` row. Status `reserved` / `completed` / `failed` / `expired`. |
+| `connectors` | Admin mirror of a pipeline connector. No source passwords. |
+| `connector_syncs` | Sync history for a connector (`ON DELETE CASCADE`). |
 
-A file with no role/group grant is not searchable or listable. There is no automatic ACL on HTTP upload or folder ingest.
+A file with no role/group grant is not searchable or listable. There is no automatic ACL on HTTP upload, folder ingest, or `/internal` complete. Re-sync of the same `(ingestion_type, original_source)` reuses `file_id`.
 
 ## Package docs
 

@@ -8,15 +8,15 @@
 
 | Note | Covers |
 | --- | --- |
-| `prompt_2/context/auth.md` | PKCE, JWT, JWKS, seed users, files_searcher |
-| `prompt_2/context/data_model.md` | Identity mirror, files, file_acl |
+| `prompt_2/context/auth.md` | PKCE, JWT, JWKS, seed users, files_searcher, ingest-client |
+| `prompt_2/context/data_model.md` | Identity mirror, files, file_acl, ingest_jobs, connectors |
 | `prompt_2/context/search.md` | Index, MiniLM, DLS, client hybrid on 3.8 |
-| `prompt_2/context/ingest.md` | HTTP upload and folder CLI |
+| `prompt_2/context/ingest.md` | HTTP upload, folder CLI, and /internal reserve/complete |
 | `prompt_2/context/search_view.md` | POST /search, View files, Open |
 | `prompt_2/context/admin.md` | Users, roles, groups, file ACL, members |
-| `prompt_2/context/dashboard.md` | GET /admin/stats |
+| `prompt_2/context/dashboard.md` | GET /admin/stats, including live connector stats |
 | `prompt_2/context/setup.md` | ./setup/setup.sh |
-| `prompt_2/context/connectors.md` | Unfinished multi-connector proposal |
+| `prompt_2/context/connectors.md` | Shipped connector control plane; unfinished Airbyte proposal |
 
 **Live (humans):** `README.md` — clone, setup, and stack. Not the agent source of truth.
 
@@ -24,18 +24,20 @@ The frozen plan file was not in this checkout, so it is not listed. The implemen
 
 **Implemented record (not product truth):** `prompt_2/frontend_ui_plan.md` — frontend restyle and local placeholders. Shipped. Do not treat the checklist as open work.
 
+**Implemented record (not product truth):** `prompt_2/internal_ingest_log.md` — `/internal` ingest API and connector control plane. Product truth is `prompt_2/current.md`. The pipeline service is not in this repo. The frozen Airbyte proposal stays unfinished.
+
 ## Briefs
 
 | Topic | Status | Path | Topic sentence |
 | --- | --- | --- | --- |
 | setup brief | historical | `prompts/instructions/1_setup_project.md` | Early project setup brief. Search layer is OpenSearch, not openai. Do not edit the file. |
-| ingestion brief | active | `prompts/instructions/2_Ingestion_pipeline.md` | Human brief for the ingestion pipeline. Connectors are not built. |
+| ingestion brief | active | `prompts/instructions/2_Ingestion_pipeline.md` | Human brief for the ingestion pipeline. The pipeline service is still unfinished. |
 
 ## Active
 
 | Topic | Status | Path | Topic sentence |
 | --- | --- | --- | --- |
-| multi-connector ingestion | active | `prompts/cursor_summary/12_ingestion_pipeline_proposal.md` | Proposal for multi-connector ingestion. Still unfinished. |
+| multi-connector ingestion | active | `prompts/cursor_summary/12_ingestion_pipeline_proposal.md` | Frozen Airbyte/Kafka/Spark proposal. Still unfinished. The shipped control plane is `prompt_2/internal_ingest_log.md`. |
 
 ## Plans
 
@@ -78,6 +80,16 @@ The frozen plan file was not in this checkout, so it is not listed. The implemen
 | dashboard | shipped | `prompts/summary/13_changes.md` | Ship dump for the admin dashboard. |
 | ingest folder CLI | shipped | `prompts/summary/14_ingest_script.md` | Ship dump for the folder ingest CLI. |
 | hybrid search workaround | shipped | `prompts/summary/hybrid_search_issue.md` | Ship dump for the client-side hybrid workaround. |
+| internal ingest | shipped | `prompt_2/internal_ingest_log.md` | Ship dump for `/internal` ingest and the connector control plane. Product truth is `prompt_2/current.md`. |
+| internal ingest plan | shipped | `prompt_2/internal_ingest_plan.md` | Implemented plan for machine ingest and the connector BFF. |
+| internal ingest pass 1 | shipped | `prompt_2/internal_ingest/pass_1_auth_schema.md` | `ingest-client`, `ingest-service`, and the new tables. |
+| internal ingest pass 2 | shipped | `prompt_2/internal_ingest/pass_2_file_ingest.md` | Presigned PUT reserve and complete. |
+| internal ingest pass 2 reference | shipped | `prompt_2/internal_ingest/pass_2_reference.md` | Record and retest guide for reserve and complete. |
+| internal ingest pass 3 | shipped | `prompt_2/internal_ingest/pass_3_connectors_stats.md` | Connector control plane and live dashboard stats. |
+| internal ingest pass 3 reference | shipped | `prompt_2/internal_ingest/pass_3_reference.md` | Record and retest guide for the connector BFF and live stats. |
+| internal ingest pass 4 | shipped | `prompt_2/internal_ingest/pass_4_ui_proofs_docs.md` | Configuration UI, proofs, and product-truth pass. |
+| internal ingest pass 4 reference | shipped | `prompt_2/internal_ingest/pass_4_reference.md` | Record and human retest guide for the Configuration UI. |
+| pipeline contract | reference | `prompt_2/internal_ingest/pipeline_contract.md` | HTTP contract for the external ingestion pipeline. Not product truth. |
 
 ## Junk
 

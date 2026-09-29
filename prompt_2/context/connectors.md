@@ -1,8 +1,20 @@
-# Connectors (not built)
+# Connectors
 
-Active unfinished work. Brief: `prompts/instructions/2_Ingestion_pipeline.md`. Proposal: `prompts/cursor_summary/12_ingestion_pipeline_proposal.md`. Do not treat the proposal checkboxes as shipped work. Do not invent a Task 7 plan.
+The control plane in this repo is shipped. The pipeline service is not. Brief: `prompts/instructions/2_Ingestion_pipeline.md`. Proposal: `prompts/cursor_summary/12_ingestion_pipeline_proposal.md`. Those archive files stay unfinished. Do not treat their checkboxes as shipped work. Do not invent a Task 7 plan. Do not edit `prompts/`.
 
-The brief asks for SharePoint, Google Drive, and S3/MinIO, with Airbyte dumping into a lake, Kafka events, and Spark plus Tika for processing. The proposal treats Spark as deferred and keeps chunking on the existing 600/75 chunker.
+## Shipped control plane
+
+Admins list, create, update, and sync connectors through `/admin/connectors`. FastAPI calls `INGESTION_PIPELINE_URL` and stores a Postgres mirror (`connectors`, `connector_syncs`). `config` is forwarded on create and update and is not a column. GET never returns it. This repo stores no source passwords.
+
+Empty `INGESTION_PIPELINE_URL` → 503 and no row. Unreachable pipeline → 502 and no row. The pipeline reports status to `POST /internal/connectors/{id}/status` with realm role `ingest-service`.
+
+Configuration → Ingestion uses that admin API. `CONNECTOR_CATALOG` is the form schema only. Saved connection fields are not loaded back into the form. Dashboard connector count, ingest rate, and last sync read the mirror. Other dashboard cards stay static placeholders.
+
+File bytes from a pipeline still arrive through `POST /internal/ingest/files` (presigned PUT, then complete). See `prompt_2/context/ingest.md`. No auto ACL.
+
+## Frozen proposal (not this repo)
+
+The brief asks for SharePoint, Google Drive, and S3/MinIO, with Airbyte dumping into a lake, Kafka events, and Spark plus Tika for processing. The proposal treats Spark as deferred and keeps chunking on the existing 600/75 chunker. None of that service is implemented here.
 
 Proposed shape, not implemented:
 
@@ -12,4 +24,4 @@ Proposed shape, not implemented:
 - `allowed_roles` and `allowed_groups` stay empty until an admin grant. No auto ACL.
 - Local `/upload` and `local/{file_id}/...` stay as they are.
 
-Still open in the proposal: event-based vs scheduled Airbyte, dedup and re-update, source deletes, connector credentials, and whether the worker is a separate process. Dashboard connector count, ingest rate, and last-sync stay API placeholders.
+Still open in the proposal: event-based vs scheduled Airbyte, dedup and re-update, source deletes, connector credentials inside the pipeline, and whether the worker is a separate process.

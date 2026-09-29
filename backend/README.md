@@ -8,14 +8,14 @@ Managed with [uv](https://docs.astral.sh/uv/). Python **3.12+**.
 
 ```
 app/
-  api/routes/     health, auth, files, search, admin_identity, admin_acl, admin_stats
+  api/routes/     health, auth, files, search, admin_identity, admin_acl, admin_stats, admin_connectors, internal_ingest
   core/           settings, JWT verification
-  models/         identity, files, file_acl, upload_sessions, acl_sync_jobs, search_metrics
-  services/       ingest (csv_extract, local_file, folder_walk, …), file_access, file_acl_admin, acl_sync, identity_admin, keycloak_admin, opensearch_search, upload, admin_stats, search_metrics, …
-  schemas/        request/response models (files, search, uploads, admin_*)
+  models/         identity, files, file_acl, upload_sessions, acl_sync_jobs, search_metrics, ingest_job, connector
+  services/       ingest (csv_extract, local_file, folder_walk, …), file_access, file_acl_admin, acl_sync, identity_admin, keycloak_admin, opensearch_search, upload, admin_stats, admin_connectors, ingestion_pipeline, internal_ingest, search_metrics, …
+  schemas/        request/response models (files, search, uploads, admin_*, internal_ingest)
 alembic/          migrations (run manually; not part of init_services)
 init_services/    Keycloak, identity mirror, OpenSearch security/ML/index, MinIO bucket
-scripts/          ingest_folder, ingest_*, search_*, seed_file_acl_for_proofs, admin_*_proof
+scripts/          ingest_folder, ingest_*, search_*, seed_file_acl_for_proofs, admin_*_proof, internal_ingest_proof
 ```
 
 ## Setup
@@ -99,11 +99,34 @@ One DTO for the Dashboard. OpenSearch is **not** queried at stats read time; avg
 | `avg_query_time_ms` | `AVG(took_ms)` on `search_query_metrics` where `created_at` is in the last 24 hours (`null` if empty). Stored value is OpenSearch `took` (sum of subqueries in client-hybrid), not FastAPI wall-clock. |
 | `total_data_ingested_bytes` | MinIO bucket `enterprise-search-files` recursive object-size sum (empty → `0`; list/sum failure → **502**) |
 | `total_docs_indexed` | `COUNT(*) FROM files` (files, not OpenSearch chunks) |
-| `active_connectors` | constant `8` (`placeholders.active_connectors: true`) |
-| `ingestion_rate_docs_per_hour` | constant `12400` |
-| `last_sync` | literal `"2 min ago"` (not a timestamp) |
+| `active_connectors` | `COUNT(*)` of `connectors` where `enabled` is true (`placeholders.active_connectors: false`) |
+| `ingestion_rate_docs_per_hour` | `COUNT(*)` of `ingest_jobs` with `status=completed` and `completed_at` in the last hour |
+| `last_sync` | latest `connectors.last_sync_at` as ISO-8601, or `—` when none |
 
 Unauthenticated → **401**; non-admin → **403**. Successful `POST /search` enqueues `record_search_metric(os_took_ms)` via `BackgroundTasks` (no query text; failures are not stored). `os_took_ms` is the OpenSearch response `took` (client_hybrid: match + neural; native_hybrid: one query). API `took_ms` stays wall-clock. Table is unbounded; the average still filters last 24 hours.
+
+### Internal ingest (`require_ingest_service`)
+
+Client `ingest-client`, realm role `ingest-service`, audience `api-client`. Not `admin` and not `search-user`. OpenSearch writes on this path use basic `admin`. No `file_acl` is created.
+
+| Method | Path | Notes |
+| --- | --- | --- |
+| `POST` | `/internal/ingest/files` | Reserve. Presigned PUT at `files/{type}/{file_id}/{name}`. `MINIO_PRESIGN_ENDPOINT` default `minio:9000`. |
+| `POST` | `/internal/ingest/files/{id}/complete` | HEAD the object, upsert `files`, bulk-index chunks. Same `(ingestion_type, original_source)` reuses `file_id` and reloads `allowed_*` from `file_acl`. |
+| `POST` | `/internal/connectors/{id}/status` | Pipeline callback. Updates `connectors` and the open `connector_syncs` row. Admin token → **403**. |
+
+### Admin connectors (`require_admin`)
+
+Postgres mirror. `config` is write-only and is not a column. Empty `INGESTION_PIPELINE_URL` → **503** and no row. Unreachable pipeline → **502** and no row.
+
+| Method | Path | Notes |
+| --- | --- | --- |
+| `GET` | `/admin/connectors` | List. No `config`. |
+| `POST` | `/admin/connectors` | Create on the pipeline, then insert. **201**. |
+| `GET` | `/admin/connectors/{id}` | One row. **404** when missing. |
+| `PATCH` | `/admin/connectors/{id}` | Forwards set fields. Local row changes only after a 2xx. |
+| `POST` | `/admin/connectors/{id}/sync` | **202** `{ sync_id, status: syncing }`. |
+| `GET` | `/admin/connectors/{id}/syncs` | Newest first. |
 
 Vite proxies `/api/*` to these paths (no `/api` prefix on FastAPI itself).
 

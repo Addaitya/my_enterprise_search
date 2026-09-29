@@ -12,7 +12,9 @@ Search forwards the same user Bearer to OpenSearch. Ingest and admin OpenSearch 
 
 ## Keycloak
 
-Realm `enterprise-search-realm`. Clients `api-client` and `web-client`. Direct access grants stay off on `web-client`. Keycloak 26 `basic` client scope is assigned so tokens include `sub`.
+Realm `enterprise-search-realm`. Clients `api-client`, `web-client`, and `ingest-client`. Direct access grants stay off on `web-client`. Keycloak 26 `basic` client scope is assigned so tokens include `sub`.
+
+`ingest-client` is confidential, service accounts on, direct access grants off, no PKCE. Its only realm role is `ingest-service`. The audience mapper sets `aud=api-client`. It has no product roles (`admin`, `search-user`) and no OpenSearch role mapping. `/internal/*` requires `ingest-service`. The secret is `KEYCLOAK_INGEST_SECRET`.
 
 Seed users (local):
 

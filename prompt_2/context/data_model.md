@@ -20,8 +20,11 @@ Admin capability is the realm role `admin`. There is no `admin_grants` table. Th
 | `roles` | Realm role UUID. `name` is the JWT/DLS string. `is_system` for built-ins. |
 | `groups` | Group UUID. `name` unique (`full.path: false`). `_empty` is `is_system`. No `parent_id`. |
 | `user_roles`, `user_groups` | Composite PKs. `ON DELETE CASCADE`. Direct membership only. |
-| `files` | `uuid4`. `object_store_path`, `file_type`, `size_bytes`, `ingestion_type`, `original_source`, timestamps. No chunks, filename, MIME, status, or uploader. |
+| `files` | `uuid4`. `object_store_path`, `file_type`, `size_bytes`, `ingestion_type`, `original_source`, timestamps. No chunks, filename, MIME, status, or uploader. `ingestion_type` CHECK: `local`, `sharepoint`, `google_drive`, `s3`, `postgresql`, `oracle`, `sqlserver`, `salesforce`, `azure`, `gcs`, `email`, `box`, `sap`, `pipeline`. Partial unique `(ingestion_type, original_source)` where `original_source` is not null. |
 | `file_acl` | Exactly one of `user_id`, `role_id`, `group_id`. Permission `viewer` or `editor` (VARCHAR + CHECK, not a PG ENUM). Role/group FKs `ON DELETE RESTRICT`. File FK `ON DELETE CASCADE`. Partial unique indexes per principal. |
+| `ingest_jobs` | Reserve before a `files` row (`file_id` is not a foreign key). Status `reserved`, `completed`, `failed`, `expired`. Same `ingestion_type` CHECK as `files`. Alembic `d4e5f6a7b8c9`. |
+| `connectors` | Admin mirror. No config or password column. Status `pending`, `idle`, `syncing`, `success`, `failed`. |
+| `connector_syncs` | Sync history. `connector_id` FK `ON DELETE CASCADE`. Status `syncing`, `success`, `failed`. |
 
 `file_acl.user_id` exists for later connectors. v1 product grants target roles and groups. Never grant ACL to `_empty` or system principals.
 

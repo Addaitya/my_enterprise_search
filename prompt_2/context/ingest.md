@@ -1,6 +1,6 @@
-# HTTP ingest and folder CLI
+# HTTP ingest, folder CLI, and internal ingest
 
-Shipped local ingest. Sources: `prompts/summary/5_local_ingestion_setup.md`, `prompts/summary/14_ingest_script.md`. Connectors are not built; see `prompt_2/context/connectors.md`.
+Shipped local ingest, plus machine reserve/complete. Sources: `prompts/summary/5_local_ingestion_setup.md`, `prompts/summary/14_ingest_script.md`. The connector pipeline service is not in this repo; the control plane is in `prompt_2/context/connectors.md`.
 
 ## HTTP upload
 
@@ -25,6 +25,17 @@ Chunk fields: `file_id`, `chunk_id`, `chunk_seq`, `meta_file_type`, `meta_file_s
 React `/upload` is multi-file, same type and size rules, Bearer attached. `upload_url` in the initiate response is the Vite `/api/...` shape; FastAPI itself has no `/api` prefix.
 
 `upload_sessions` Alembic revision `a1b2c3d4e5f6`. Statuses: `initiated`, `uploading`, `processing`, `completed`, `failed`, `expired`, `cancelled`.
+
+## Internal ingest
+
+`require_ingest_service` (client `ingest-client`). OpenSearch writes use basic `admin`. No auto ACL.
+
+| Method | Path | Notes |
+| --- | --- | --- |
+| POST | `/internal/ingest/files` | Reserve an `ingest_jobs` row and a presigned PUT. No `files` row yet. |
+| POST | `/internal/ingest/files/{id}/complete` | HEAD MinIO, upsert `files`, bulk-index chunks, omit `embedding`. |
+
+Object path is `files/{type}/{file_id}/{name}`. `MINIO_PRESIGN_ENDPOINT` defaults to `minio:9000`. Chunks start with empty `allowed_roles` and `allowed_groups`. A second reserve of the same `(ingestion_type, original_source)` returns the same `file_id`. Complete then reloads role and group names from `file_acl`. Realm `admin` on these routes is 403. Jobs use Alembic `d4e5f6a7b8c9` and are not `upload_sessions`.
 
 ## Folder CLI
 
