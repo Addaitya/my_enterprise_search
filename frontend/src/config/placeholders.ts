@@ -11,16 +11,6 @@ export type ConnectorCatalogEntry = {
   fields: ConnectorField[]
 }
 
-export type ConnectorFixture = {
-  id: string
-  type: string
-  name: string
-  enabled: boolean
-  schedule: string
-  cdc: boolean
-  values: Record<string, string>
-}
-
 const text = (key: string, label: string): ConnectorField => ({ key, label })
 
 export const CONNECTOR_CATALOG: ConnectorCatalogEntry[] = [
@@ -128,38 +118,6 @@ export const CONFIG_SECTIONS = [
 ] as const
 
 export type ConfigSectionId = (typeof CONFIG_SECTIONS)[number]['id']
-
-function emptyValues(type: string): Record<string, string> {
-  const entry = CONNECTOR_CATALOG.find((item) => item.type === type)
-  const values: Record<string, string> = {}
-  for (const field of entry?.fields ?? []) {
-    values[field.key] = field.kind === 'toggle' ? 'false' : ''
-  }
-  return values
-}
-
-function fixture(id: string, type: string, name: string): ConnectorFixture {
-  return {
-    id,
-    type,
-    name,
-    enabled: false,
-    schedule: '',
-    cdc: false,
-    values: emptyValues(type),
-  }
-}
-
-export const CONNECTOR_FIXTURES: ConnectorFixture[] = [
-  fixture('postgresql-crm', 'postgresql', 'PostgreSQL CRM'),
-  fixture('sharepoint', 'sharepoint', 'SharePoint'),
-  fixture('email', 'email', 'Email'),
-  fixture('s3', 's3', 'Amazon S3'),
-  fixture('salesforce', 'salesforce', 'Salesforce'),
-  fixture('oracle', 'oracle', 'Oracle'),
-  fixture('box', 'box', 'Box'),
-  fixture('sap', 'sap', 'SAP'),
-]
 
 export function isSensitiveField(key: string): boolean {
   return /password|secret|key|token/i.test(key)

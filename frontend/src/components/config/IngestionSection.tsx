@@ -1,22 +1,112 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 
 import {
+  createConnector,
+  listConnectors,
+  syncConnector,
+  updateConnector,
+  type Connector,
+  type ConnectorPatch,
+} from '../../api/connectors'
+import { ApiError } from '../../api/client'
+import {
   CONNECTOR_CATALOG,
-  CONNECTOR_FIXTURES,
   isSensitiveField,
   type ConnectorCatalogEntry,
-  type ConnectorFixture,
+  type ConnectorField,
 } from '../../config/placeholders'
-import { Field, SaveBar, TextInput, Toggle } from './primitives'
+import { Field, TextInput, Toggle } from './primitives'
 
-type Draft = ConnectorFixture
+type Draft = {
+  id: string | null
+  type: string
+  name: string
+  enabled: boolean
+  schedule: string
+  cdc: boolean
+  cdcTouched: boolean
+  values: Record<string, string>
+  originalName: string
+  originalSchedule: string
+}
+
+function emptyValues(entry: ConnectorCatalogEntry, forCreate: boolean): Record<string, string> {
+  const values: Record<string, string> = {}
+  for (const field of entry.fields) {
+    values[field.key] = forCreate && field.kind === 'toggle' ? 'false' : ''
+  }
+  return values
+}
+
+function pipelineErrorCopy(err: unknown): string {
+  if (err instanceof ApiError) {
+    if (err.status === 503) return 'The pipeline URL is not configured.'
+    if (err.status === 502) return 'The pipeline is unreachable.'
+    return err.detail || `Request failed (${err.status})`
+  }
+  return err instanceof Error ? err.message : 'Request failed'
+}
+
+function configFromDraft(draft: Draft, entry: ConnectorCatalogEntry | undefined): Record<string, string> {
+  const config: Record<string, string> = {}
+  if (draft.id === null) {
+    for (const field of entry?.fields ?? []) {
+      config[field.key] = draft.values[field.key] ?? (field.kind === 'toggle' ? 'false' : '')
+    }
+    config.cdc = draft.cdc ? 'true' : 'false'
+    return config
+  }
+  for (const field of entry?.fields ?? []) {
+    const value = draft.values[field.key] ?? ''
+    if (field.kind === 'toggle') {
+      if (value === 'true' || value === 'false') config[field.key] = value
+      continue
+    }
+    if (!value.trim()) continue
+    config[field.key] = value
+  }
+  if (draft.cdcTouched) config.cdc = draft.cdc ? 'true' : 'false'
+  return config
+}
+
+function patchFromDraft(draft: Draft, entry: ConnectorCatalogEntry | undefined): ConnectorPatch {
+  const patch: ConnectorPatch = {}
+  if (draft.name !== draft.originalName) patch.name = draft.name
+  if (draft.schedule !== draft.originalSchedule) {
+    const schedule = draft.schedule.trim()
+    patch.schedule = schedule || null
+  }
+  const config = configFromDraft(draft, entry)
+  if (Object.keys(config).length > 0) patch.config = config
+  return patch
+}
 
 export function IngestionSection() {
-  const [connectors, setConnectors] = useState<ConnectorFixture[]>(CONNECTOR_FIXTURES)
-  const [editing, setEditing] = useState<Draft | null>(null)
-  const [picking, setPicking] = useState(false)
+  const [connectors, setConnectors] = useState<Connector[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
+  const [editing, setEditing] = useState<Draft | null>(null)
+  const [picking, setPicking] = useState(false)
+  const [busyId, setBusyId] = useState<string | null>(null)
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      setConnectors(await listConnectors())
+    } catch (err) {
+      setConnectors([])
+      setError(pipelineErrorCopy(err))
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    void load()
+  }, [load])
 
   useEffect(() => {
     if (!saved) return
@@ -24,32 +114,78 @@ export function IngestionSection() {
     return () => window.clearTimeout(timer)
   }, [saved])
 
-  function update(id: string, patch: Partial<ConnectorFixture>) {
-    setConnectors((rows) => rows.map((row) => (row.id === id ? { ...row, ...patch } : row)))
+  function flashSaved() {
+    setNotice(null)
+    setSaved(true)
   }
 
-  function saveDraft(draft: Draft) {
-    setConnectors((rows) => {
-      const exists = rows.some((row) => row.id === draft.id)
-      return exists ? rows.map((row) => (row.id === draft.id ? draft : row)) : [...rows, draft]
-    })
-    setEditing(null)
+  function replaceRow(next: Connector) {
+    setConnectors((rows) => rows.map((row) => (row.id === next.id ? next : row)))
+  }
+
+  async function setEnabled(row: Connector, enabled: boolean) {
+    const previous = row.enabled
+    replaceRow({ ...row, enabled })
+    setBusyId(row.id)
+    setError(null)
+    try {
+      const updated = await updateConnector(row.id, { enabled })
+      replaceRow(updated)
+      flashSaved()
+    } catch (err) {
+      replaceRow({ ...row, enabled: previous })
+      setNotice(pipelineErrorCopy(err))
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  async function syncRow(row: Connector) {
+    setBusyId(row.id)
+    setError(null)
+    setNotice(null)
+    try {
+      await syncConnector(row.id)
+      flashSaved()
+      await load()
+    } catch (err) {
+      setNotice(pipelineErrorCopy(err))
+      await load()
+    } finally {
+      setBusyId(null)
+    }
   }
 
   function addType(entry: ConnectorCatalogEntry) {
-    const id = `${entry.type}-${Date.now()}`
-    const values: Record<string, string> = {}
-    for (const field of entry.fields) values[field.key] = field.kind === 'toggle' ? 'false' : ''
     setEditing({
-      id,
+      id: null,
       type: entry.type,
       name: entry.label,
       enabled: false,
       schedule: '',
       cdc: false,
-      values,
+      cdcTouched: false,
+      values: emptyValues(entry, true),
+      originalName: entry.label,
+      originalSchedule: '',
     })
     setPicking(false)
+  }
+
+  function editRow(row: Connector) {
+    const entry = CONNECTOR_CATALOG.find((item) => item.type === row.type)
+    setEditing({
+      id: row.id,
+      type: row.type,
+      name: row.name,
+      enabled: row.enabled,
+      schedule: row.schedule ?? '',
+      cdc: false,
+      cdcTouched: false,
+      values: entry ? emptyValues(entry, false) : {},
+      originalName: row.name,
+      originalSchedule: row.schedule ?? '',
+    })
   }
 
   return (
@@ -58,14 +194,18 @@ export function IngestionSection() {
         <div className="flex items-center justify-between gap-3 border-b border-gray-200 px-5 py-4">
           <div>
             <h2 className="text-sm font-semibold text-gray-900">Connectors</h2>
-            <p className="text-xs text-gray-400">Local placeholders. None of these are connected.</p>
           </div>
-          <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-700">
-            Placeholder
-          </span>
+          {saved ? (
+            <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700">
+              Saved
+            </span>
+          ) : null}
         </div>
+        {error ? (
+          <p className="border-b border-rose-200 bg-rose-50 px-5 py-2 text-sm text-rose-700">{error}</p>
+        ) : null}
         {notice ? (
-          <p className="border-b border-amber-200 bg-amber-50 px-5 py-2 text-sm text-amber-700">{notice}</p>
+          <p className="border-b border-rose-200 bg-rose-50 px-5 py-2 text-sm text-rose-700">{notice}</p>
         ) : null}
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm">
@@ -78,40 +218,64 @@ export function IngestionSection() {
               </tr>
             </thead>
             <tbody>
-              {connectors.map((row) => {
-                const entry = CONNECTOR_CATALOG.find((item) => item.type === row.type)
-                return (
-                  <tr key={row.id} className="border-t border-gray-100">
-                    <td className="px-5 py-2 text-gray-900">
-                      {entry?.icon} {row.name}
-                    </td>
-                    <td className="px-5 py-2 text-gray-500">Not connected</td>
-                    <td className="px-5 py-2">
-                      <Toggle
-                        label={`Enable ${row.name}`}
-                        on={row.enabled}
-                        onChange={(enabled) => update(row.id, { enabled })}
-                      />
-                    </td>
-                    <td className="px-5 py-2">
-                      <button
-                        type="button"
-                        className="mr-3 text-indigo-600 hover:text-indigo-700"
-                        onClick={() => setEditing({ ...row, values: { ...row.values } })}
-                      >
-                        Configure
-                      </button>
-                      <button
-                        type="button"
-                        className="text-indigo-600 hover:text-indigo-700"
-                        onClick={() => setNotice(`Sync is not connected for ${row.name}.`)}
-                      >
-                        Sync Now
-                      </button>
-                    </td>
-                  </tr>
-                )
-              })}
+              {loading ? (
+                <tr className="border-t border-gray-100">
+                  <td className="px-5 py-3 text-gray-400" colSpan={4}>
+                    Loading…
+                  </td>
+                </tr>
+              ) : connectors.length === 0 ? (
+                <tr className="border-t border-gray-100">
+                  <td className="px-5 py-3 text-gray-400" colSpan={4}>
+                    No connectors
+                  </td>
+                </tr>
+              ) : (
+                connectors.map((row) => {
+                  const entry = CONNECTOR_CATALOG.find((item) => item.type === row.type)
+                  return (
+                    <tr key={row.id} className="border-t border-gray-100">
+                      <td className="px-5 py-2 text-gray-900">
+                        {entry?.icon} {row.name}
+                      </td>
+                      <td className="px-5 py-2 text-gray-500">
+                        <div>{row.status}</div>
+                        {row.last_error ? (
+                          <div className="mt-0.5 text-xs text-rose-600">{row.last_error}</div>
+                        ) : null}
+                      </td>
+                      <td className="px-5 py-2">
+                        <Toggle
+                          label={`Enable ${row.name}`}
+                          on={row.enabled}
+                          onChange={(enabled) => {
+                            if (busyId === row.id) return
+                            void setEnabled(row, enabled)
+                          }}
+                        />
+                      </td>
+                      <td className="px-5 py-2">
+                        <button
+                          type="button"
+                          className="mr-3 text-indigo-600 hover:text-indigo-700 disabled:text-gray-300"
+                          disabled={busyId === row.id}
+                          onClick={() => editRow(row)}
+                        >
+                          Configure
+                        </button>
+                        <button
+                          type="button"
+                          className="text-indigo-600 hover:text-indigo-700 disabled:text-gray-300"
+                          disabled={busyId === row.id}
+                          onClick={() => void syncRow(row)}
+                        >
+                          Sync Now
+                        </button>
+                      </td>
+                    </tr>
+                  )
+                })
+              )}
             </tbody>
           </table>
         </div>
@@ -125,12 +289,17 @@ export function IngestionSection() {
           </button>
         </div>
       </div>
-      <SaveBar saved={saved} onSave={() => setSaved(true)} />
       {editing ? (
         <ConnectorModal
           draft={editing}
           onClose={() => setEditing(null)}
-          onSave={saveDraft}
+          onSaved={(row) => {
+            if (editing.id) replaceRow(row)
+            else setConnectors((rows) => [row, ...rows])
+            setEditing(null)
+            flashSaved()
+          }}
+          onError={(message) => setNotice(message)}
         />
       ) : null}
       {picking ? <AddConnectorPicker onClose={() => setPicking(false)} onPick={addType} /> : null}
@@ -141,14 +310,58 @@ export function IngestionSection() {
 function ConnectorModal({
   draft,
   onClose,
-  onSave,
+  onSaved,
+  onError,
 }: {
   draft: Draft
   onClose: () => void
-  onSave: (draft: Draft) => void
+  onSaved: (row: Connector) => void
+  onError: (message: string) => void
 }) {
   const [local, setLocal] = useState(draft)
+  const [saving, setSaving] = useState(false)
+  const [formError, setFormError] = useState<string | null>(null)
   const entry = CONNECTOR_CATALOG.find((item) => item.type === local.type)
+  const isNew = local.id === null
+
+  function setField(field: ConnectorField, value: string) {
+    setLocal({ ...local, values: { ...local.values, [field.key]: value } })
+  }
+
+  async function save() {
+    const name = local.name.trim()
+    if (!name) {
+      setFormError('Name is required.')
+      return
+    }
+    setSaving(true)
+    setFormError(null)
+    try {
+      if (isNew) {
+        const created = await createConnector({
+          type: local.type,
+          name,
+          enabled: local.enabled,
+          schedule: local.schedule.trim() || null,
+          config: configFromDraft({ ...local, name }, entry),
+        })
+        onSaved(created)
+        return
+      }
+      const patch = patchFromDraft({ ...local, name }, entry)
+      if (Object.keys(patch).length === 0) {
+        onClose()
+        return
+      }
+      onSaved(await updateConnector(local.id as string, patch))
+    } catch (err) {
+      const message = pipelineErrorCopy(err)
+      setFormError(message)
+      onError(message)
+    } finally {
+      setSaving(false)
+    }
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
@@ -160,7 +373,17 @@ function ConnectorModal({
         aria-label="Configure connector"
       >
         <h2 className="text-lg font-bold text-gray-900">Configure connector</h2>
-        <p className="mt-1 text-xs text-gray-400">Stored in this page only. Not connected.</p>
+        {isNew ? null : (
+          <p className="mt-1 text-xs text-gray-400">
+            Saved connection fields are not shown again. Leave a field blank to keep the pipeline&apos;s current
+            value, or fill it to replace it.
+          </p>
+        )}
+        {formError ? (
+          <p className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+            {formError}
+          </p>
+        ) : null}
         <Field label="Name">
           <TextInput value={local.name} onChange={(name) => setLocal({ ...local, name })} />
         </Field>
@@ -170,33 +393,33 @@ function ConnectorModal({
               <Toggle
                 label={field.label}
                 on={local.values[field.key] === 'true'}
-                onChange={(on) =>
-                  setLocal({ ...local, values: { ...local.values, [field.key]: on ? 'true' : 'false' } })
-                }
+                onChange={(on) => setField(field, on ? 'true' : 'false')}
               />
             ) : field.kind === 'textarea' ? (
               <textarea
                 rows={3}
                 value={local.values[field.key] ?? ''}
-                onChange={(event) =>
-                  setLocal({ ...local, values: { ...local.values, [field.key]: event.target.value } })
-                }
+                onChange={(event) => setField(field, event.target.value)}
                 className="w-full rounded-lg border border-gray-200 px-3 py-1.5 text-sm outline-none focus:border-indigo-400"
               />
             ) : (
               <TextInput
                 secret={isSensitiveField(field.key)}
                 value={local.values[field.key] ?? ''}
-                onChange={(value) => setLocal({ ...local, values: { ...local.values, [field.key]: value } })}
+                onChange={(value) => setField(field, value)}
               />
             )}
           </Field>
         ))}
-        <Field label="Sync schedule" hint="Cron, stored locally">
+        <Field label="Sync schedule" hint="Cron expression">
           <TextInput value={local.schedule} onChange={(schedule) => setLocal({ ...local, schedule })} />
         </Field>
         <Field label="CDC">
-          <Toggle label="CDC" on={local.cdc} onChange={(cdc) => setLocal({ ...local, cdc })} />
+          <Toggle
+            label="CDC"
+            on={local.cdc}
+            onChange={(cdc) => setLocal({ ...local, cdc, cdcTouched: true })}
+          />
         </Field>
         <div className="mt-4 flex justify-end gap-2">
           <button type="button" className="rounded-lg px-3 py-1.5 text-sm text-gray-600" onClick={onClose}>
@@ -204,10 +427,11 @@ function ConnectorModal({
           </button>
           <button
             type="button"
-            className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700"
-            onClick={() => onSave(local)}
+            disabled={saving}
+            className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:bg-indigo-300"
+            onClick={() => void save()}
           >
-            Save locally
+            {saving ? 'Saving…' : 'Save'}
           </button>
         </div>
       </div>
