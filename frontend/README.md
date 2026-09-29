@@ -41,9 +41,9 @@ From the repo root you can also run API + UI together:
 | `/` | signed-in | Hybrid search + results + Open download |
 | `/upload` | signed-in (`search-user` \| `admin`) | Multi-file resumable upload |
 | `/files` | signed-in | ACL-filtered file list + Open |
-| `/dashboard` | realm role `admin` | Six KPI cards from `GET /admin/stats` |
+| `/dashboard` | realm role `admin` | Live stats from `GET /admin/stats`, plus static placeholder cards |
 | `/admin` | realm role `admin` | Access Control(Admin): Users / Roles / Groups / Access |
-| `/configuration` | realm role `admin` | Placeholder `this is configuration.` |
+| `/configuration` | realm role `admin` | Ingestion uses `/admin/connectors`. Other sections stay local placeholders |
 
 ## Search (`/`)
 
@@ -85,12 +85,18 @@ Client modules:
 
 Realm role `admin` only (`AdminRoute`). Navbar **Dashboard** sits before Access Control(Admin). Client: `src/api/stats.ts` (`getAdminStats()`), page `src/pages/Dashboard.tsx`.
 
-Six cards formatted from the API (placeholders are not hardcoded in React):
+Nine cards. Six come from `GET /admin/stats` and have no Placeholder badge:
 
 - **Avg OpenSearch query time (last 24 hours)** — `null` → `—`
 - **Total data ingested** — bytes → B / KB / MB / GB
 - **Total no. of docs indexed** — locale integer
-- **Active connectors** / **Ingestion rate** / **Last sync** — API values (`12,400 docs/hr`; last sync string as-is)
+- **Active connectors** — enabled connector count
+- **Ingestion rate** — completed ingest jobs in the last hour, shown as `docs/hr`
+- **Last sync** — API string as-is (`—` when none)
+
+Three cards stay hardcoded and show a Placeholder badge: **p99 latency** (`187 ms`), **Searches today** (`3,841`), and **Total sources** (`12`).
+
+The connector status table and the index distribution bars are static placeholders. Sync Now on that table does not call the API. The live connector list, enable toggle, configure form, and Sync Now are on **Configuration → Ingestion**.
 
 Refresh reloads `GET /admin/stats`. MinIO failure surfaces as the API **502**.
 
@@ -109,7 +115,17 @@ Copy uses “access” / “role or group” (not ACL/principal). After membersh
 
 ## Configuration (`/configuration`)
 
-Realm role `admin` only. Body is exactly `this is configuration.` No settings API yet. Client: `src/pages/Configuration.tsx`.
+Realm role `admin` only. Page: `src/pages/Configuration.tsx`. Ingestion: `src/components/config/IngestionSection.tsx` and `src/api/connectors.ts`. Connector types and field labels live in `CONNECTOR_CATALOG` (`src/config/placeholders.ts`). That catalog is the form schema only. The browser never calls `INGESTION_PIPELINE_URL`.
+
+**Ingestion** loads `GET /admin/connectors` on open. The table is empty until a pipeline accepts a create. There is no Placeholder badge.
+
+- **Add connector** picks a catalog type. Save calls `POST /admin/connectors`. Connection fields, including passwords, go in `config`. Toggles are `"true"` or `"false"`. CDC is sent inside `config` and is not its own column. The API does not return `config`.
+- **Configure** on an existing row loads name, enabled, and schedule. Connection fields start blank. The form says saved connection fields are not shown again: leave a field blank to keep the pipeline's current value, or fill it to replace it. Save sends only changed fields (`PATCH`). A blank secret is omitted.
+- The Enabled toggle calls `PATCH` with `{ enabled }`. On failure the toggle goes back.
+- **Sync Now** calls `POST /admin/connectors/{id}/sync`.
+- **503** copy: the pipeline URL is not configured. **502** copy: the pipeline is unreachable. A 2xx flashes Saved. The list stays empty after a failed create.
+
+The other sections (Messaging, ETL, Parsing, Enrichment, Metadata, ML Classify, Search, IAM, API, Observability, Orchestration) are local placeholders and are not saved. Search says hybrid weights stay 0.3 and 0.7 on the server. IAM says it does not change the Keycloak realm or the PKCE client.
 
 Admin navbar order after View files: **Dashboard** | **Access Control(Admin)** | **Configuration**. Non-admin users do not get those links; visiting the routes shows Forbidden.
 

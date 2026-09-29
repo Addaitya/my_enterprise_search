@@ -1,6 +1,6 @@
 # Backend
 
-FastAPI service for Enterprise Search: JWT auth against Keycloak, Postgres identity/files metadata + ACL, resumable local ingest into MinIO + OpenSearch, **ops folder ingest CLI**, **client-hybrid search**, file list/open streams, **admin identity + file ACL** (bulk grants, members, sync jobs), **admin dashboard stats**, and bootstrap via `init_services`.
+FastAPI service for Enterprise Search: JWT auth against Keycloak, Postgres identity/files metadata + ACL, resumable local ingest into MinIO + OpenSearch, **ops folder ingest CLI**, **internal ingest API** (`ingest-service`, presigned PUT, complete), **admin connector control plane** (BFF + Postgres mirror; the pipeline service is not in this repo), **client-hybrid search**, file list/open streams, **admin identity + file ACL** (bulk grants, members, sync jobs), **admin dashboard stats**, and bootstrap via `init_services`.
 
 Managed with [uv](https://docs.astral.sh/uv/). Python **3.12+**.
 
@@ -20,7 +20,7 @@ scripts/          ingest_folder, ingest_*, search_*, seed_file_acl_for_proofs, a
 
 ## Setup
 
-Preferred: from the **repo root**, run `./setup/setup.sh` (see [setup/README.md](../setup/README.md)).
+Preferred: from the **repo root**, run `./setup/setup.sh` (see [setup/README.md](../setup/README.md)). An already-running stack can add the internal ingest client with `./setup/internal_ingest.sh`. That script does not start a pipeline container. An empty `INGESTION_PIPELINE_URL` makes connector create and sync return **503**.
 
 Manual path — env lives in root `.env` (Compose + FastAPI):
 
@@ -225,6 +225,7 @@ uv run python -m scripts.admin_acl_proof         # single-file ACL + sync jobs
 uv run python -m scripts.admin_file_access_proof # bulk ACL + file-grants filters
 uv run python -m scripts.admin_member_assignment_proof  # role/group members
 uv run python -m scripts.admin_stats_proof       # /admin/stats 401/403/200 + search avg
+uv run python -m scripts.internal_ingest_proof   # reserve → PUT → complete, ACL reload, connector 502/503
 ```
 
 `seed_file_acl_for_proofs` grants role `search-user` on file A and group `engineering` on file B (idempotent; never `_empty`), then `update_by_query` copies names into chunk `allowed_*`.

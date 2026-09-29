@@ -217,14 +217,14 @@ A file with no role/group grant is not searchable or listable. There is no autom
 
 ## Package docs
 
-- [backend/README.md](backend/README.md) — API (incl. `/admin/*` + `/admin/stats`), HTTP ingest, folder CLI, search, `init_services`, proofs
-- [frontend/README.md](frontend/README.md) — SPA routes, auth, search/files/upload/admin clients
+- [backend/README.md](backend/README.md) — API (incl. `/admin/*`, `/admin/stats`, `/admin/connectors`, `/internal/*`), HTTP ingest, folder CLI, search, `init_services`, proofs
+- [frontend/README.md](frontend/README.md) — SPA routes, auth, search/files/upload, Dashboard, Access Control, Configuration ingestion
 
 ## Repo layout
 
 ```
 backend/                 FastAPI app, Alembic, init_services, HTTP ingest + folder CLI + search scripts
-frontend/                React SPA (PKCE login, search, upload, files)
+frontend/                React SPA (PKCE login, search, upload, files, dashboard, configuration)
 setup/                   One-command local bootstrap (./setup/setup.sh)
 start-dev.sh             Local API + UI (uvicorn + Vite)
 docker-compose.yml
