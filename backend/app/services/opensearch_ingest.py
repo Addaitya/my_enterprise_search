@@ -33,9 +33,19 @@ def build_chunk_document(
     uploaded_at: str,
     updated_at: str,
     original_source: str | None = None,
+    ingestion_type: str = "local",
+    allowed_roles: list[str] | None = None,
+    allowed_groups: list[str] | None = None,
 ) -> dict[str, Any]:
-    """Chunk body for bulk index. Omits ``embedding`` (ingest pipeline fills it)."""
+    """Chunk body for bulk index. Omits ``embedding`` (ingest pipeline fills it).
+
+    HTTP upload and the folder CLI keep the ``local`` default and empty ACL
+    lists. Internal complete passes the file's ingestion type and names from
+    ``file_acl``. ``_empty`` is never written.
+    """
     chunk_id = f"{file_id}:{chunk_seq:06d}"
+    roles = [] if allowed_roles is None else [name for name in allowed_roles if name != "_empty"]
+    groups = [] if allowed_groups is None else [name for name in allowed_groups if name != "_empty"]
     return {
         "file_id": str(file_id),
         "chunk_id": chunk_id,
@@ -45,10 +55,10 @@ def build_chunk_document(
         "updated_at": updated_at,
         "uploaded_at": uploaded_at,
         "content": content,
-        "allowed_roles": [],
-        "allowed_groups": [],
+        "allowed_roles": roles,
+        "allowed_groups": groups,
         "object_store_path": object_store_path,
-        "ingestion_type": "local",
+        "ingestion_type": ingestion_type,
         "original_source": original_source,
     }
 

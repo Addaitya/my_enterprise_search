@@ -7,6 +7,7 @@ one complete object at ``local/{file_id}/{safe_name}`` on successful complete.
 from __future__ import annotations
 
 from collections.abc import Iterator
+from datetime import timedelta
 from io import BytesIO
 from typing import Any
 
@@ -62,6 +63,40 @@ class MinioStore:
             return True
         except S3Error:
             return False
+
+    def stat_object_size(self, object_store_path: str) -> int | None:
+        """HEAD the object. Missing key is None, never 0."""
+        try:
+            stat = self.client.stat_object(self.bucket, object_store_path)
+        except S3Error as exc:
+            if exc.code in {"NoSuchKey", "NoSuchObject"}:
+                return None
+            raise
+        if stat.size is None:
+            return None
+        return int(stat.size)
+
+    def presigned_put_url(self, object_store_path: str, *, expires_seconds: int) -> str:
+        """Sign a PUT against ``minio_presign_endpoint``.
+
+        The store's main client stays on ``minio_endpoint`` so host-side HEAD
+        and GET are unchanged. Region comes from that client. Without it,
+        minio-py would call GetBucketLocation on the presign host, and a
+        host-side API cannot resolve ``minio:9000``.
+        """
+        region = self.client._get_region(self.bucket)
+        client = Minio(
+            self.settings.minio_presign_endpoint,
+            access_key=self.settings.minio_root_user,
+            secret_key=self.settings.minio_root_password,
+            secure=self.settings.minio_secure,
+            region=region,
+        )
+        return client.presigned_put_object(
+            self.bucket,
+            object_store_path,
+            expires=timedelta(seconds=expires_seconds),
+        )
 
     def get_object_bytes(self, object_store_path: str) -> bytes:
         """Read full object into memory (small files / proofs)."""
