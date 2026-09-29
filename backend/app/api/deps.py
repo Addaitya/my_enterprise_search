@@ -50,3 +50,15 @@ def require_admin(user: CurrentUser = Depends(get_current_user)) -> CurrentUser:
     if "admin" not in user.roles:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
     return user
+
+
+def require_ingest_service(user: CurrentUser = Depends(get_current_user)) -> CurrentUser:
+    """Machine ingest and connector callbacks.
+
+    Realm ``admin`` and ``search-user`` are not a bypass. Do not forward this
+    token to OpenSearch; ``user_bearer_header`` stays the search path only.
+    Bulk indexing stays basic ``admin`` inside ``opensearch_ingest``.
+    """
+    if "ingest-service" not in user.roles:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+    return user

@@ -43,6 +43,8 @@ class Settings(BaseSettings):
     keycloak_realm: str = "enterprise-search-realm"
     keycloak_client_id: str = "api-client"
     keycloak_api_secret: str = ""
+    keycloak_ingest_client_id: str = "ingest-client"
+    keycloak_ingest_secret: str = ""
     keycloak_admin: str = "admin"
     keycloak_admin_password: str = ""
     keycloak_db: str = "keycloak"
@@ -77,6 +79,15 @@ class Settings(BaseSettings):
     minio_root_password: str = ""
     minio_bucket: str = "enterprise-search-files"
     minio_secure: bool = False
+    # Presigned PUT host for a pipeline on the compose network. HEAD and GET
+    # stay on minio_endpoint so a host-side API can still reach MinIO.
+    minio_presign_endpoint: str = "minio:9000"
+    minio_presign_expiry_seconds: int = 3600
+    pipeline_max_upload_bytes: int = 104_857_600  # 100 MiB; independent of the human cap
+    # Base URL of the ingestion pipeline control plane. Empty means not configured.
+    # Source config is forwarded on create/update and is not stored in Postgres.
+    ingestion_pipeline_url: str = ""
+    ingestion_pipeline_timeout_seconds: float = 10
 
     # Ingest API (Task 4). Chunk size is input tokens for splitting, not embedding dim.
     ingest_max_upload_bytes: int = 26_214_400  # 25 MiB

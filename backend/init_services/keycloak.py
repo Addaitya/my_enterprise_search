@@ -10,7 +10,14 @@ REALM_ADMIN_USERNAME = "realm-admin"
 REALM_ADMIN_PASSWORD = "adminpass"
 SEARCHER_USERNAME = "searcher"
 SEARCHER_PASSWORD = "searcherpass"
-CLIENT_IDS = ("api-client", "web-client")
+CLIENT_IDS = ("api-client", "web-client", "ingest-client")
+INGEST_CLIENT_ID = "ingest-client"
+INGEST_REALM_ROLE = "ingest-service"
+INGEST_ROLE_DESCRIPTION = (
+    "Machine ingest and connector status callbacks. Not a product user."
+)
+# Product roles stay off the ingest service account. Realm admin is not a bypass.
+_INGEST_FORBIDDEN_REALM_ROLES = ("admin", "search-user")
 HARDCODED_GROUPS_MAPPERS = ("aaa-groups-always-present", "groups-always-present")
 # Keycloak omits `groups` when membership is empty, which breaks OpenSearch DLS
 # JSON. Dual mappers on the same claim overwrite each other, so searcher joins
@@ -77,6 +84,8 @@ def _get_clients(admin: httpx.Client) -> dict[str, dict[str, Any]]:
         print(f"[ok] keycloak client {client_id} id={client.get('id')}")
         if client_id == "web-client" and client.get("directAccessGrantsEnabled"):
             raise RuntimeError("web-client must not have direct access grants enabled")
+        if client_id == "ingest-client" and client.get("directAccessGrantsEnabled"):
+            raise RuntimeError("ingest-client must not have direct access grants enabled")
     _ensure_web_client_browser_settings(admin, found)
     return found
 
@@ -464,11 +473,220 @@ def _ensure_api_client_service_account_roles(
         )
 
 
+_INGEST_PROTOCOL_MAPPERS: tuple[dict[str, Any], ...] = (
+    {
+        "name": "realm-roles-flat",
+        "protocol": "openid-connect",
+        "protocolMapper": "oidc-usermodel-realm-role-mapper",
+        "consentRequired": False,
+        "config": {
+            "multivalued": "true",
+            "userinfo.token.claim": "true",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "roles",
+            "jsonType.label": "String",
+        },
+    },
+    {
+        "name": "groups",
+        "protocol": "openid-connect",
+        "protocolMapper": "oidc-group-membership-mapper",
+        "consentRequired": False,
+        "config": {
+            "full.path": "false",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true",
+            "claim.name": "groups",
+        },
+    },
+    {
+        "name": "audience-api-client",
+        "protocol": "openid-connect",
+        "protocolMapper": "oidc-audience-mapper",
+        "consentRequired": False,
+        "config": {
+            "included.client.audience": "api-client",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "introspection.token.claim": "true",
+        },
+    },
+)
+
+
+def _find_client(admin: httpx.Client, client_id: str) -> dict[str, Any] | None:
+    matches = _json(admin.get("/clients", params={"clientId": client_id})) or []
+    for client in matches:
+        if client.get("clientId") == client_id:
+            return client
+    return None
+
+
+def _ensure_named_realm_role(admin: httpx.Client, name: str, description: str) -> None:
+    response = admin.get(f"/roles/{name}")
+    if response.status_code == 200:
+        print(f"[ok] realm role {name} already exists")
+        return
+    if response.status_code != 404:
+        raise RuntimeError(f"lookup realm role {name} {response.status_code}: {response.text}")
+    created = admin.post("/roles", json={"name": name, "description": description})
+    if created.status_code not in (201, 204, 409):
+        raise RuntimeError(f"create realm role {name} {created.status_code}: {created.text}")
+    print(f"[ok] created realm role {name}")
+
+
+def _ensure_protocol_mapper(
+    admin: httpx.Client, client_id: str, client_uuid: str, mapper: dict[str, Any]
+) -> None:
+    current = _json(admin.get(f"/clients/{client_uuid}/protocol-mappers/models")) or []
+    if any(item.get("name") == mapper["name"] for item in current):
+        print(f"[ok] {mapper['name']} present on {client_id}")
+        return
+    response = admin.post(f"/clients/{client_uuid}/protocol-mappers/models", json=mapper)
+    if response.is_error:
+        raise RuntimeError(
+            f"add mapper {mapper['name']} on {client_id} {response.status_code}: {response.text}"
+        )
+    print(f"[ok] added mapper {mapper['name']} on {client_id}")
+
+
+def _ensure_ingest_client(admin: httpx.Client) -> None:
+    """Create ingest-client on an already-imported realm. Do not rotate an existing secret."""
+    settings = get_settings()
+    _ensure_named_realm_role(admin, INGEST_REALM_ROLE, INGEST_ROLE_DESCRIPTION)
+    existing = _find_client(admin, INGEST_CLIENT_ID)
+    if existing is None:
+        secret = settings.keycloak_ingest_secret or "ingest-client-secret"
+        response = admin.post(
+            "/clients",
+            json={
+                "clientId": INGEST_CLIENT_ID,
+                "name": "Ingest service client",
+                "enabled": True,
+                "publicClient": False,
+                "secret": secret,
+                "protocol": "openid-connect",
+                "standardFlowEnabled": False,
+                "directAccessGrantsEnabled": False,
+                "serviceAccountsEnabled": True,
+                "authorizationServicesEnabled": False,
+                "protocolMappers": list(_INGEST_PROTOCOL_MAPPERS),
+            },
+        )
+        if response.status_code not in (201, 204):
+            raise RuntimeError(
+                f"create {INGEST_CLIENT_ID} {response.status_code}: {response.text}"
+            )
+        existing = _find_client(admin, INGEST_CLIENT_ID)
+        if existing is None:
+            raise RuntimeError(f"created {INGEST_CLIENT_ID} but could not reload it")
+        print(f"[ok] created keycloak client {INGEST_CLIENT_ID} id={existing.get('id')}")
+    else:
+        print(
+            f"[ok] keycloak client {INGEST_CLIENT_ID} id={existing.get('id')} "
+            "(secret unchanged)"
+        )
+
+    client_uuid = existing["id"]
+    full = _json(admin.get(f"/clients/{client_uuid}"))
+    changed = False
+    if full.get("directAccessGrantsEnabled"):
+        full["directAccessGrantsEnabled"] = False
+        changed = True
+    if full.get("standardFlowEnabled"):
+        full["standardFlowEnabled"] = False
+        changed = True
+    if not full.get("serviceAccountsEnabled"):
+        full["serviceAccountsEnabled"] = True
+        changed = True
+    if full.get("publicClient"):
+        full["publicClient"] = False
+        changed = True
+    if full.get("authorizationServicesEnabled"):
+        full["authorizationServicesEnabled"] = False
+        changed = True
+    attributes = dict(full.get("attributes") or {})
+    if attributes.get("pkce.code.challenge.method"):
+        attributes["pkce.code.challenge.method"] = ""
+        full["attributes"] = attributes
+        changed = True
+    if changed:
+        response = admin.put(f"/clients/{client_uuid}", json=full)
+        if response.is_error:
+            raise RuntimeError(
+                f"update {INGEST_CLIENT_ID} {response.status_code}: {response.text}"
+            )
+        print(f"[ok] {INGEST_CLIENT_ID} flags corrected (secret unchanged)")
+    else:
+        print(f"[ok] {INGEST_CLIENT_ID} direct access grants off")
+
+    for mapper in _INGEST_PROTOCOL_MAPPERS:
+        _ensure_protocol_mapper(admin, INGEST_CLIENT_ID, client_uuid, mapper)
+
+    sa = _json(admin.get(f"/clients/{client_uuid}/service-account-user"))
+    if not sa or not sa.get("id"):
+        raise RuntimeError(f"{INGEST_CLIENT_ID} service-account user missing")
+    sa_id = sa["id"]
+    _ensure_realm_roles(admin, sa_id, {INGEST_REALM_ROLE}, only=False)
+    current = _json(admin.get(f"/users/{sa_id}/role-mappings/realm")) or []
+    extra = [role for role in current if role.get("name") in _INGEST_FORBIDDEN_REALM_ROLES]
+    if extra:
+        response = admin.request(
+            "DELETE",
+            f"/users/{sa_id}/role-mappings/realm",
+            json=extra,
+        )
+        if response.is_error:
+            raise RuntimeError(
+                f"remove product roles from {INGEST_CLIENT_ID} "
+                f"{response.status_code}: {response.text}"
+            )
+        print(
+            f"[ok] removed {sorted(role['name'] for role in extra)} "
+            f"from {INGEST_CLIENT_ID} service account"
+        )
+    current_names = {
+        role["name"]
+        for role in (_json(admin.get(f"/users/{sa_id}/role-mappings/realm")) or [])
+    }
+    if INGEST_REALM_ROLE not in current_names:
+        raise RuntimeError(f"{INGEST_CLIENT_ID} service account missing {INGEST_REALM_ROLE}")
+    forbidden = current_names.intersection(_INGEST_FORBIDDEN_REALM_ROLES)
+    if forbidden:
+        raise RuntimeError(
+            f"{INGEST_CLIENT_ID} service account must not have {sorted(forbidden)}"
+        )
+    print(f"[ok] {INGEST_CLIENT_ID} service account realm role {INGEST_REALM_ROLE}")
+
+    rm_clients = _json(admin.get("/clients", params={"clientId": "realm-management"})) or []
+    if not rm_clients:
+        raise RuntimeError("realm-management client not found")
+    rm_id = rm_clients[0]["id"]
+    assigned = _json(admin.get(f"/users/{sa_id}/role-mappings/clients/{rm_id}")) or []
+    if assigned:
+        response = admin.request(
+            "DELETE",
+            f"/users/{sa_id}/role-mappings/clients/{rm_id}",
+            json=assigned,
+        )
+        if response.is_error:
+            raise RuntimeError(
+                f"remove realm-management roles from {INGEST_CLIENT_ID} "
+                f"{response.status_code}: {response.text}"
+            )
+        print(f"[ok] removed realm-management roles from {INGEST_CLIENT_ID} service account")
+    else:
+        print(f"[ok] {INGEST_CLIENT_ID} service account has no realm-management roles")
+
+
 def configure() -> None:
     """Verify realm/clients and ensure seed users. Does not re-import realm.json."""
     verify_realm()
     admin = _admin_client()
     with admin:
+        _ensure_ingest_client(admin)
         clients = _get_clients(admin)
         _ensure_basic_scope(admin, clients)
         _ensure_groups_claim(admin, clients)

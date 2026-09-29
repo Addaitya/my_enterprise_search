@@ -19,11 +19,39 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
 from app.models.identity import Group, Role, User
 
+# Keep in sync with alembic revision d4e5f6a7b8c9. Not a PostgreSQL ENUM.
+FILE_INGESTION_TYPES: tuple[str, ...] = (
+    "local",
+    "sharepoint",
+    "google_drive",
+    "s3",
+    "postgresql",
+    "oracle",
+    "sqlserver",
+    "salesforce",
+    "azure",
+    "gcs",
+    "email",
+    "box",
+    "sap",
+    "pipeline",
+)
+FILE_INGESTION_TYPE_CHECK = "ingestion_type IN ({})".format(
+    ", ".join(f"'{name}'" for name in FILE_INGESTION_TYPES)
+)
+
 
 class File(Base):
     __tablename__ = "files"
     __table_args__ = (
-        CheckConstraint("ingestion_type IN ('local')", name="ck_files_ingestion_type"),
+        CheckConstraint(FILE_INGESTION_TYPE_CHECK, name="ck_files_ingestion_type"),
+        Index(
+            "uq_files_ingestion_source",
+            "ingestion_type",
+            "original_source",
+            unique=True,
+            postgresql_where=text("original_source IS NOT NULL"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
