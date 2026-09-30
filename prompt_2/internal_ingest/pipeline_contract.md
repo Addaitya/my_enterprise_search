@@ -78,7 +78,7 @@ PUT the raw bytes to `upload_url` before expiry. Send exactly `size_bytes` bytes
 | `file_type` | Extension, 1–32 characters, no dot or slash. Any extension is allowed. |
 | `chunks` | Non-empty `{ "seq": int >= 0, "content": non-empty string }`. `seq` unique. |
 
-201 returns `file_id`, `status` `completed`, `object_store_path`, `file_type`, `size_bytes`, `ingestion_type`, `chunk_count`. Chunk id is `{file_id}:{seq:06d}`. The same id is overwritten on a later complete. Seqs you leave out stay indexed, so a shorter re-sync leaves stale hits. This API fills the vector. Omit `embedding`.
+201 returns `file_id`, `status` `completed`, `object_store_path`, `file_type`, `size_bytes`, `ingestion_type`, `chunk_count`. Chunk id is `{file_id}:{seq:06d}`. The same id is overwritten on a later complete. Any chunk for that file whose seq is not in this body is deleted, so a shorter re-sync does not leave stale hits. Seqs may be non-contiguous (`0,1,2` then `0,2` removes seq `1`). This API fills the vector. Omit `embedding`.
 
 | Result | Next step |
 | --- | --- |
@@ -89,7 +89,7 @@ PUT the raw bytes to `upload_url` before expiry. Send exactly `size_bytes` bytes
 | 409 `object not found` | Newest job stays `reserved`. PUT that job’s URL, then complete. |
 | 422 size mismatch | Job stays `reserved`. PUT the reserved size, or reserve again with the real size. |
 | 502 | Object store error. Complete again later. |
-| 500 | Save failed. Job is `failed`. Reserve again. Grants on that file can be dropped. The object remains. |
+| 500 | Save failed, including a failure while removing omitted chunks. Job is `failed`. Reserve again. Grants on that file can be dropped. The object remains. |
 
 ### Sync status
 
@@ -111,3 +111,5 @@ Create sends this API’s connector UUID as `callback_connector_id`. Sync does n
 Check: reserve `pipeline` with a new `original_source`, PUT, complete with `file_type` `log` and one chunk. A second reserve returns the same `file_id`. Another complete is 409 `already completed`.
 
 Callback id: a create stub must see `callback_connector_id` on `POST /connectors` and `{}` on sync. The admin **201** `id` equals that value. `POST /internal/connectors/{callback_connector_id}/status` with the ingest token returns **200**. The same path with your pipeline `id` does not. Unit check, no Compose: `cd backend && uv run python -m unittest tests.test_pipeline_callback_id -v`.
+
+Shorter re-sync, unit check, no Compose: `cd backend && uv run python -m unittest tests.test_internal_ingest_stale_chunks -v`.

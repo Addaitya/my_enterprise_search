@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from typing import Any
 from uuid import UUID
 
@@ -177,6 +177,47 @@ def delete_chunks_by_file_id(file_id: UUID, *, settings: Settings | None = None)
     if response.is_error:
         raise RuntimeError(
             f"OpenSearch delete_by_query HTTP {response.status_code}: {response.text}"
+        )
+
+
+def delete_omitted_chunks(
+    file_id: UUID,
+    keep_seqs: Sequence[int],
+    *,
+    settings: Settings | None = None,
+) -> None:
+    """Delete chunks for ``file_id`` whose ``chunk_seq`` is not in ``keep_seqs``.
+
+    A re-sync overwrites kept ids. Sequences left out of the new body are removed
+    so a shorter file does not keep stale hits. An empty keep list is refused so
+    this cannot delete every chunk for the file.
+    """
+    if not keep_seqs:
+        raise ValueError("keep_seqs must be non-empty")
+    settings = settings or get_settings()
+    body = {
+        "query": {
+            "bool": {
+                "filter": [{"term": {"file_id": str(file_id)}}],
+                "must_not": [{"terms": {"chunk_seq": list(keep_seqs)}}],
+            }
+        }
+    }
+    with _admin_client(settings) as client:
+        response = client.post(
+            f"/{settings.opensearch_index}/_delete_by_query",
+            params={"refresh": "true", "conflicts": "proceed"},
+            json=body,
+        )
+    if response.is_error:
+        raise RuntimeError(
+            f"OpenSearch delete_by_query HTTP {response.status_code}: {response.text}"
+        )
+    payload = response.json()
+    if payload.get("version_conflicts") or payload.get("failures"):
+        raise RuntimeError(
+            "OpenSearch delete_by_query left stale chunks: "
+            f"{payload.get('failures') or payload.get('version_conflicts')}"
         )
 
 

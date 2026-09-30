@@ -2,8 +2,9 @@
 
 Reserve does not insert ``files``. The pipeline writes bytes to MinIO.
 Complete HEADs that object, upserts ``files``, and bulk-indexes the chunks
-the pipeline already extracted. This path does not chunk, does not call
-``detect_file_type``, and does not grant ``file_acl``.
+the pipeline already extracted. Chunks whose seq is absent from that body
+are deleted. This path does not chunk, does not call ``detect_file_type``,
+and does not grant ``file_acl``.
 """
 
 from __future__ import annotations
@@ -28,6 +29,7 @@ from app.services.opensearch_ingest import (
     build_chunk_document,
     bulk_index_chunks,
     delete_chunks_by_file_id,
+    delete_omitted_chunks,
 )
 
 logger = logging.getLogger(__name__)
@@ -153,7 +155,11 @@ class InternalIngestService:
         file_type: str,
         chunks: Sequence[tuple[int, str]],
     ) -> CompleteResult:
-        """HEAD the reserved object, upsert files, bulk-index chunks."""
+        """HEAD the reserved object, upsert files, bulk-index chunks.
+
+        Chunks whose seq is absent from this body are removed after the bulk
+        write, so a shorter re-sync does not leave stale hits.
+        """
         checked_type = self._require_file_type(file_type)
         checked_chunks = self._require_chunks(chunks)
         job = self._latest_job_for_file(file_id)
@@ -209,6 +215,11 @@ class InternalIngestService:
                 for seq, content in checked_chunks
             ]
             bulk_index_chunks(docs, settings=self.settings)
+            delete_omitted_chunks(
+                file_id,
+                [seq for seq, _content in checked_chunks],
+                settings=self.settings,
+            )
             job.status = "completed"
             job.completed_at = now
             job.updated_at = now

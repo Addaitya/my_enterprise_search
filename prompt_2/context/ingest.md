@@ -33,7 +33,7 @@ React `/upload` is multi-file, same type and size rules, Bearer attached. `uploa
 | Method | Path | Notes |
 | --- | --- | --- |
 | POST | `/internal/ingest/files` | Reserve an `ingest_jobs` row and a presigned PUT. No `files` row yet. |
-| POST | `/internal/ingest/files/{id}/complete` | HEAD MinIO, upsert `files`, bulk-index chunks, omit `embedding`. |
+| POST | `/internal/ingest/files/{id}/complete` | HEAD MinIO, upsert `files`, bulk-index chunks, omit `embedding`. Chunks whose seq is absent from the body are deleted. |
 
 Object path is `files/{type}/{file_id}/{name}`. `MINIO_PRESIGN_ENDPOINT` defaults to `minio:9000`. Chunks start with empty `allowed_roles` and `allowed_groups`. A second reserve of the same `(ingestion_type, original_source)` returns the same `file_id`. Complete then reloads role and group names from `file_acl`. Realm `admin` on these routes is 403. Jobs use Alembic `d4e5f6a7b8c9` and are not `upload_sessions`.
 
