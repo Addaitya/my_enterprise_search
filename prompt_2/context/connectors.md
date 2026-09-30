@@ -6,7 +6,7 @@ The control plane in this repo is shipped. The pipeline service is not. Brief: `
 
 Admins list, create, update, and sync connectors through `/admin/connectors`. FastAPI calls `INGESTION_PIPELINE_URL` and stores a Postgres mirror (`connectors`, `connector_syncs`). `config` is forwarded on create and update and is not a column. GET never returns it. This repo stores no source passwords.
 
-Empty `INGESTION_PIPELINE_URL` → 503 and no row. Unreachable pipeline → 502 and no row. The pipeline reports status to `POST /internal/connectors/{id}/status` with realm role `ingest-service`.
+Empty `INGESTION_PIPELINE_URL` → 503 and no row. Unreachable pipeline → 502 and no row. Create forwards `callback_connector_id`, this API’s connector UUID, minted before the pipeline call. The pipeline reports status to `POST /internal/connectors/{id}/status` with that same id and realm role `ingest-service`. Sync does not repeat the UUID.
 
 Configuration → Ingestion uses that admin API. `CONNECTOR_CATALOG` is the form schema only. Saved connection fields are not loaded back into the form. Dashboard connector count, ingest rate, and last sync read the mirror. Other dashboard cards stay static placeholders.
 

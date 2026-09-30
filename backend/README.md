@@ -122,7 +122,7 @@ Postgres mirror. `config` is write-only and is not a column. Empty `INGESTION_PI
 | Method | Path | Notes |
 | --- | --- | --- |
 | `GET` | `/admin/connectors` | List. No `config`. |
-| `POST` | `/admin/connectors` | Create on the pipeline, then insert. **201**. |
+| `POST` | `/admin/connectors` | Mints this API’s connector UUID, forwards it as `callback_connector_id`, then inserts. **201**. |
 | `GET` | `/admin/connectors/{id}` | One row. **404** when missing. |
 | `PATCH` | `/admin/connectors/{id}` | Forwards set fields. Local row changes only after a 2xx. |
 | `POST` | `/admin/connectors/{id}/sync` | **202** `{ sync_id, status: syncing }`. |

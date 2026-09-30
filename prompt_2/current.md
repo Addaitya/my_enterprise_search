@@ -23,7 +23,7 @@ Company-internal hybrid search (keyword + semantic) over files, with role- and g
 - Admin Dashboard (live stats; p99, searches today, and total sources stay placeholders)
 - Access Control (Users / Roles / Groups / Access)
 - Internal ingest API (`ingest-client`, presigned PUT, complete indexes chunks)
-- Admin connector control plane (BFF + Postgres mirror). Pipeline service is not in this repo.
+- Admin connector control plane (BFF + Postgres mirror). Pipeline create includes `callback_connector_id` (this API’s connector UUID) for the status callback. Pipeline service is not in this repo.
 - Dashboard connector count, ingest rate, and last sync are live. Other dashboard cards stay placeholders.
 - Configuration ingestion talks to `/admin/connectors`. Other Configuration sections stay local placeholders.
 

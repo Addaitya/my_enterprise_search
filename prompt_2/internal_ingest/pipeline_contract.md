@@ -1,7 +1,7 @@
 ---
 status: reference
 title: Pipeline contract with this backend
-date: 2026-09-28
+date: 2026-09-30
 notes: Interface for the external ingestion pipeline. Not product truth. Product truth is prompt_2/current.md. The pipeline service is not in this repo.
 ---
 
@@ -31,11 +31,11 @@ One attempt, timeout 10 seconds (`INGESTION_PIPELINE_TIMEOUT_SECONDS`). No retri
 
 | Call | Body | Success |
 | --- | --- | --- |
-| `POST /connectors` | `type`, `name`, `enabled`, `schedule`, `config` | JSON object with a non-empty string `id` (your connector id). A bare string, an empty `id`, or any other 2xx stores nothing. |
+| `POST /connectors` | `type`, `name`, `enabled`, `schedule`, `config`, `callback_connector_id` | JSON object with a non-empty string `id` (your connector id). A bare string, an empty `id`, or any other 2xx stores nothing. |
 | `PATCH /connectors/{pipeline_id}` | Same fields, only those that changed | Any 2xx. Body ignored. |
 | `POST /connectors/{pipeline_id}/sync` | `{}` | Any 2xx. Body ignored. Return quickly; the sync stays open until the status callback. A failed call is already marked failed, so no callback is expected. |
 
-Create always includes all five keys. `enabled` is a boolean (default false). `schedule` may be JSON `null`. `config` may be `{}`. If the mirror insert fails after a successful create, you may keep an orphan connector.
+Create always includes all six keys. `enabled` is a boolean (default false). `schedule` may be JSON `null`. `config` may be `{}`. `callback_connector_id` is this API’s connector UUID as a string. Store it. Status callbacks use that value, not the `id` you return. Sync does not repeat it. If the mirror insert fails after a successful create, you may keep an orphan connector. A later status call for that UUID is 404.
 
 `config` is string-keyed, secrets included, and is not stored here. Create sends every catalog field (`""` if blank). Toggles and `cdc` are `"true"` or `"false"`. Update sends only filled fields: a missing secret stays, a present key replaces it. `schedule` is opaque text, or `null`. `enabled: false` still receives Sync Now.
 
@@ -93,7 +93,7 @@ PUT the raw bytes to `upload_url` before expiry. Send exactly `size_bytes` bytes
 
 ### Sync status
 
-`POST /internal/connectors/{connector_id}/status`. `connector_id` is this API’s connector UUID, not your `pipeline_id`.
+`POST /internal/connectors/{connector_id}/status`. `connector_id` is the `callback_connector_id` from create, which is this API’s connector UUID, not your `pipeline_id`.
 
 Body: `status` (`success` or `failed`), optional `files_count` (zero is allowed), `error`, `finished_at`, `started_at`. Extra fields are 422. `finished_at` is last sync (now, if omitted). `started_at` is ignored. `success` clears the stored error. On `failed`, send `error` or the admin sees a blank failure. Unknown UUID is 404. 200 returns the connector without `config`.
 
@@ -101,11 +101,13 @@ This closes only the newest open sync. A second Sync Now leaves the older row `s
 
 ## Sequence and gap
 
-1. `POST /connectors` and return `{ "id": "<yours>" }`.
-2. `POST /connectors/{your id}/sync` with `{}` and return 2xx.
+1. `POST /connectors`, including `callback_connector_id`, and return `{ "id": "<yours>" }`. Store `callback_connector_id`.
+2. `POST /connectors/{your id}/sync` with `{}` and return 2xx. The body does not repeat the UUID.
 3. Per object: reserve, PUT, complete.
-4. `POST /internal/connectors/{backend uuid}/status`.
+4. `POST /internal/connectors/{callback_connector_id}/status`.
 
-Create and sync omit this API’s connector UUID, and the sync response is ignored, so the status URL’s id is not available. Do not read this API’s database to find it. Also absent: source delete, file delete, connector delete, and content-hash identity.
+Create sends this API’s connector UUID as `callback_connector_id`. Sync does not repeat it, and the sync response is ignored. Do not read this API’s database to find the id. Also absent: source delete, file delete, connector delete, and content-hash identity.
 
 Check: reserve `pipeline` with a new `original_source`, PUT, complete with `file_type` `log` and one chunk. A second reserve returns the same `file_id`. Another complete is 409 `already completed`.
+
+Callback id: a create stub must see `callback_connector_id` on `POST /connectors` and `{}` on sync. The admin **201** `id` equals that value. `POST /internal/connectors/{callback_connector_id}/status` with the ingest token returns **200**. The same path with your pipeline `id` does not. Unit check, no Compose: `cd backend && uv run python -m unittest tests.test_pipeline_callback_id -v`.

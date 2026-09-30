@@ -1,6 +1,7 @@
 """Postgres mirror of pipeline connectors.
 
-Create calls the pipeline first and inserts only after it returns an id.
+Create mints ``connectors.id``, forwards it as ``callback_connector_id``, and
+inserts only after the pipeline returns its own id.
 ``config`` is forwarded and is not a column. Sync history stays in
 ``connector_syncs``; a failed outbound sync is kept as history.
 """
@@ -82,16 +83,18 @@ class AdminConnectorService:
         return connector_out(self._require(connector_id))
 
     def create_connector(self, body: ConnectorCreate) -> ConnectorOut:
+        connector_id = uuid.uuid4()
         pipeline_id = pipeline_create(
             type=body.type,
             name=body.name,
             enabled=body.enabled,
             schedule=body.schedule,
             config=body.config,
+            callback_connector_id=str(connector_id),
         )
         now = _utcnow()
         row = Connector(
-            id=uuid.uuid4(),
+            id=connector_id,
             type=body.type,
             name=body.name,
             enabled=body.enabled,

@@ -8,7 +8,7 @@ Contract (the other side is not in this repo):
 
 | Call | Request | Success body |
 | --- | --- | --- |
-| ``POST {base}/connectors`` | ``type``, ``name``, ``enabled``, ``schedule``, ``config`` | JSON object with string ``id`` |
+| ``POST {base}/connectors`` | ``type``, ``name``, ``enabled``, ``schedule``, ``config``, ``callback_connector_id`` | JSON object with string ``id`` |
 | ``PATCH {base}/connectors/{pipeline_id}`` | same fields, all optional | 2xx, body ignored |
 | ``POST {base}/connectors/{pipeline_id}/sync`` | empty object | 2xx, body ignored |
 
@@ -67,8 +67,13 @@ def create_connector(
     enabled: bool,
     schedule: str | None,
     config: dict[str, Any],
+    callback_connector_id: str,
 ) -> str:
-    """POST /connectors. Returns the pipeline connector id. Does not write Postgres."""
+    """POST /connectors. Returns the pipeline connector id. Does not write Postgres.
+
+    ``callback_connector_id`` is this API's connector UUID. The pipeline uses it
+    on ``POST /internal/connectors/{id}/status``.
+    """
     response = _request(
         "POST",
         "/connectors",
@@ -78,6 +83,7 @@ def create_connector(
             "enabled": enabled,
             "schedule": schedule,
             "config": config,
+            "callback_connector_id": callback_connector_id,
         },
     )
     try:
