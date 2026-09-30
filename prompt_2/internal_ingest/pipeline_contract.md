@@ -15,6 +15,7 @@ HTTP contract for the service at `INGESTION_PIPELINE_URL`. That service is not i
 - [Calling this API](#calling-this-api)
 - [Reserve](#reserve)
 - [Complete](#complete)
+- [Delete](#delete)
 - [Sync status](#sync-status)
 - [Sequence and gap](#sequence-and-gap)
 
@@ -91,6 +92,22 @@ PUT the raw bytes to `upload_url` before expiry. Send exactly `size_bytes` bytes
 | 502 | Object store error. Complete again later. |
 | 500 | Save failed, including a failure while removing omitted chunks. Job is `failed`. Reserve again. Grants on that file can be dropped. The object remains. |
 
+### Delete
+
+`DELETE /internal/ingest/files/{file_id}`. No body. `file_id` is the id from reserve. That id is the one file for `(ingestion_type, original_source)`.
+
+| Result | Meaning |
+| --- | --- |
+| 204 | The file is gone. Empty body. A repeat, while an ingest job for that id remains, is also 204. |
+| 404 `Ingest job not found` | No ingest job for that id. Local uploads and the folder CLI are not deleted. |
+| 502 | Search-index delete failed. The `files` row is unchanged. Retry. |
+| 500 | The database write failed after the index delete. The `files` row is unchanged. Chunks may already be gone. Retry. |
+| 401 / 403 | Same auth as reserve and complete. |
+
+204 removes OpenSearch chunks for that `file_id`, the MinIO object at the stored `files` path, and each distinct job object path. The `files` row is deleted. `file_acl` and ACL sync jobs go with it. `reserved` and `failed` jobs for that id become `expired`, so a later complete is 409 and cannot recreate the file. `completed` jobs stay, so the ingest-rate count is unchanged.
+
+A later reserve of the same `(ingestion_type, original_source)` returns a new `file_id` with no grants. Do not complete the deleted id afterward.
+
 ### Sync status
 
 `POST /internal/connectors/{connector_id}/status`. `connector_id` is the `callback_connector_id` from create, which is this API’s connector UUID, not your `pipeline_id`.
@@ -106,10 +123,12 @@ This closes only the newest open sync. A second Sync Now leaves the older row `s
 3. Per object: reserve, PUT, complete.
 4. `POST /internal/connectors/{callback_connector_id}/status`.
 
-Create sends this API’s connector UUID as `callback_connector_id`. Sync does not repeat it, and the sync response is ignored. Do not read this API’s database to find the id. Also absent: source delete, file delete, connector delete, and content-hash identity.
+When that source is removed, `DELETE /internal/ingest/files/{file_id}` and do not complete afterward.
+
+Create sends this API’s connector UUID as `callback_connector_id`. Sync does not repeat it, and the sync response is ignored. Do not read this API’s database to find the id. Also absent: connector delete and content-hash identity.
 
 Check: reserve `pipeline` with a new `original_source`, PUT, complete with `file_type` `log` and one chunk. A second reserve returns the same `file_id`. Another complete is 409 `already completed`.
 
 Callback id: a create stub must see `callback_connector_id` on `POST /connectors` and `{}` on sync. The admin **201** `id` equals that value. `POST /internal/connectors/{callback_connector_id}/status` with the ingest token returns **200**. The same path with your pipeline `id` does not. Unit check, no Compose: `cd backend && uv run python -m unittest tests.test_pipeline_callback_id -v`.
 
-Shorter re-sync, unit check, no Compose: `cd backend && uv run python -m unittest tests.test_internal_ingest_stale_chunks -v`.
+Shorter re-sync and source delete, unit check, no Compose: `cd backend && uv run python -m unittest tests.test_internal_ingest_stale_chunks tests.test_internal_ingest_delete -v`.

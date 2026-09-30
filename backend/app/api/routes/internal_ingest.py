@@ -1,10 +1,10 @@
-"""Machine ingest routes. Pipeline writes bytes; this API reserves and completes."""
+"""Machine ingest routes. Pipeline writes bytes; this API reserves, completes, and deletes."""
 
 from __future__ import annotations
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import require_ingest_service
@@ -88,6 +88,19 @@ def complete_ingest_file(
         ingestion_type=result.ingestion_type,
         chunk_count=result.chunk_count,
     )
+
+
+@router.delete("/ingest/files/{file_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_ingest_file(
+    file_id: UUID,
+    _user: CurrentUser = Depends(require_ingest_service),
+    service: InternalIngestService = Depends(_service),
+) -> Response:
+    try:
+        service.delete_file(file_id)
+    except InternalIngestError as exc:
+        raise _http_error(exc) from exc
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post("/connectors/{connector_id}/status", response_model=ConnectorOut)

@@ -3,7 +3,8 @@
 Reserve does not insert ``files``. The pipeline writes bytes to MinIO.
 Complete HEADs that object, upserts ``files``, and bulk-indexes the chunks
 the pipeline already extracted. Chunks whose seq is absent from that body
-are deleted. This path does not chunk, does not call ``detect_file_type``,
+are deleted. ``delete_file`` removes the file, its ACL, its objects, and its
+indexed chunks. This path does not chunk, does not call ``detect_file_type``,
 and does not grant ``file_acl``.
 """
 
@@ -246,6 +247,43 @@ class InternalIngestService:
             chunk_count=len(checked_chunks),
         )
 
+    def delete_file(self, file_id: uuid.UUID) -> None:
+        """Remove one pipeline file and the data hanging off that file_id.
+
+        Requires an ingest job, so a local upload or folder-CLI file is left
+        alone. ``file_acl`` and ``acl_sync_jobs`` cascade with the ``files`` row.
+        Completed jobs stay so the ingest-rate count is unchanged. Reserved and
+        failed jobs become ``expired`` so a later complete cannot recreate the
+        file. A second call, once the row is gone and jobs remain, is a no-op.
+        """
+        jobs = self._jobs_for_file(file_id)
+        if not jobs:
+            raise InternalIngestError(404, "Ingest job not found")
+
+        try:
+            delete_chunks_by_file_id(file_id, settings=self.settings)
+        except Exception as exc:
+            raise InternalIngestError(502, "search index unavailable") from exc
+
+        row = self.db.get(File, file_id)
+        paths = {job.object_store_path for job in jobs}
+        if row is not None:
+            paths.add(row.object_store_path)
+        for path in paths:
+            self.store.delete_object(path)
+        if row is not None:
+            self.db.delete(row)
+        now = _utcnow()
+        for job in jobs:
+            if job.status in {"reserved", "failed"}:
+                job.status = "expired"
+                job.updated_at = now
+        try:
+            self.db.commit()
+        except Exception as exc:
+            self.db.rollback()
+            raise InternalIngestError(500, "ingest delete failed") from exc
+
     def _compensate(self, *, file_id: uuid.UUID, job_id: uuid.UUID, error: str) -> None:
         """Drop the files row and chunks. Leave the MinIO object for retry.
 
@@ -373,3 +411,6 @@ class InternalIngestService:
             .order_by(IngestJob.created_at.desc(), IngestJob.id.desc())
             .limit(1)
         )
+
+    def _jobs_for_file(self, file_id: uuid.UUID) -> list[IngestJob]:
+        return list(self.db.scalars(select(IngestJob).where(IngestJob.file_id == file_id)).all())

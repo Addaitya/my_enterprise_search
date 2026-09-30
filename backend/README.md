@@ -113,6 +113,7 @@ Client `ingest-client`, realm role `ingest-service`, audience `api-client`. Not 
 | --- | --- | --- |
 | `POST` | `/internal/ingest/files` | Reserve. Presigned PUT at `files/{type}/{file_id}/{name}`. `MINIO_PRESIGN_ENDPOINT` default `minio:9000`. |
 | `POST` | `/internal/ingest/files/{id}/complete` | HEAD the object, upsert `files`, bulk-index chunks, delete chunks whose seq is absent. Same `(ingestion_type, original_source)` reuses `file_id` and reloads `allowed_*` from `file_acl`. |
+| `DELETE` | `/internal/ingest/files/{id}` | **204**. Removes the file, `file_acl`, indexed chunks, and object bytes when an ingest job exists. **404** with no job. **502** if the index delete fails and the row is left in place. |
 | `POST` | `/internal/connectors/{id}/status` | Pipeline callback. Updates `connectors` and the open `connector_syncs` row. Admin token → **403**. |
 
 ### Admin connectors (`require_admin`)
