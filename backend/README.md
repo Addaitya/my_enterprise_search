@@ -1,6 +1,6 @@
 # Backend
 
-FastAPI service for Enterprise Search: JWT auth against Keycloak, Postgres identity/files metadata + ACL, resumable local ingest into MinIO + OpenSearch, **ops folder ingest CLI**, **internal ingest API** (`ingest-service`, presigned PUT, complete), **admin connector control plane** (BFF + Postgres mirror; the pipeline service is not in this repo), **client-hybrid search**, file list/open streams, **admin identity + file ACL** (bulk grants, members, sync jobs), **admin dashboard stats**, and bootstrap via `init_services`.
+FastAPI service for Enterprise Search: JWT auth against Keycloak, Postgres identity/files metadata + ACL, resumable local ingest into MinIO + OpenSearch, **ops folder ingest CLI**, **internal ingest API** (`ingest-service`, presigned PUT, complete drops omitted sequences on re-sync, delete removes the file), **admin connector control plane** (BFF + Postgres mirror; create sends `callback_connector_id`; the pipeline service is not in this repo), **client-hybrid search**, file list/open streams, **admin identity + file ACL** (bulk grants, members, sync jobs), **admin dashboard stats**, and bootstrap via `init_services`.
 
 Managed with [uv](https://docs.astral.sh/uv/). Python **3.12+**.
 
