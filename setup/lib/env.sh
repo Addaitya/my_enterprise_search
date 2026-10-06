@@ -13,6 +13,7 @@ _ROOT_ENV_KEYS=(
   APP_PASSWORD
   KEYCLOAK_API_SECRET
   KEYCLOAK_INGEST_SECRET
+  KEYCLOAK_EXTERNAL_SECRET
   KEYCLOAK_ADMIN
   KEYCLOAK_ADMIN_PASSWORD
   OPENSEARCH_INITIAL_ADMIN_PASSWORD
@@ -106,6 +107,7 @@ prepare_env() {
   _copy_env "${root_sample}" "${root_env}" "${force}"
   _copy_env "${fe_sample}" "${fe_env}" "${force}"
   _append_missing_key "${root_env}" KEYCLOAK_INGEST_SECRET "${root_sample}"
+  _append_missing_key "${root_env}" KEYCLOAK_EXTERNAL_SECRET "${root_sample}"
 
   local bad=0
   _validate_env_file "${root_env}" "${_ROOT_ENV_KEYS[@]}" || bad=1
@@ -124,6 +126,7 @@ ensure_internal_ingest_env() {
 
   _copy_env "${root_sample}" "${root_env}" 0
   _append_missing_key "${root_env}" KEYCLOAK_INGEST_SECRET "${root_sample}"
+  _append_missing_key "${root_env}" KEYCLOAK_EXTERNAL_SECRET "${root_sample}"
   _validate_env_file "${root_env}" "${_ROOT_ENV_KEYS[@]}" \
     || die "Env validation failed (fix keys or copy backend/.env.sample)" "${EXIT_ENV}"
   ok "env files"

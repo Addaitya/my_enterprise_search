@@ -45,6 +45,8 @@ class Settings(BaseSettings):
     keycloak_api_secret: str = ""
     keycloak_ingest_client_id: str = "ingest-client"
     keycloak_ingest_secret: str = ""
+    keycloak_external_client_id: str = "external-api-client"
+    keycloak_external_secret: str = ""
     keycloak_admin: str = "admin"
     keycloak_admin_password: str = ""
     keycloak_db: str = "keycloak"
