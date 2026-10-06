@@ -10,8 +10,10 @@ REALM_ADMIN_USERNAME = "realm-admin"
 REALM_ADMIN_PASSWORD = "adminpass"
 SEARCHER_USERNAME = "searcher"
 SEARCHER_PASSWORD = "searcherpass"
-CLIENT_IDS = ("api-client", "web-client", "ingest-client")
+CLIENT_IDS = ("api-client", "web-client", "ingest-client", "external-api-client")
 INGEST_CLIENT_ID = "ingest-client"
+EXTERNAL_CLIENT_ID = "external-api-client"
+EXTERNAL_REALM_ROLES = frozenset({"admin", "search-user"})
 INGEST_REALM_ROLE = "ingest-service"
 INGEST_ROLE_DESCRIPTION = (
     "Machine ingest and connector status callbacks. Not a product user."
@@ -86,6 +88,8 @@ def _get_clients(admin: httpx.Client) -> dict[str, dict[str, Any]]:
             raise RuntimeError("web-client must not have direct access grants enabled")
         if client_id == "ingest-client" and client.get("directAccessGrantsEnabled"):
             raise RuntimeError("ingest-client must not have direct access grants enabled")
+        if client_id == EXTERNAL_CLIENT_ID and client.get("directAccessGrantsEnabled"):
+            raise RuntimeError("external-api-client must not have direct access grants enabled")
     _ensure_web_client_browser_settings(admin, found)
     return found
 
@@ -681,12 +685,149 @@ def _ensure_ingest_client(admin: httpx.Client) -> None:
         print(f"[ok] {INGEST_CLIENT_ID} service account has no realm-management roles")
 
 
+def _ensure_external_api_client(admin: httpx.Client) -> None:
+    """Create external-api-client on an already-imported realm. Do not rotate an existing secret.
+
+    Product roles ``admin`` and ``search-user`` are granted. ``ingest-service`` is not.
+    """
+    settings = get_settings()
+    existing = _find_client(admin, EXTERNAL_CLIENT_ID)
+    if existing is None:
+        secret = settings.keycloak_external_secret or "external-api-client-secret"
+        response = admin.post(
+            "/clients",
+            json={
+                "clientId": EXTERNAL_CLIENT_ID,
+                "name": "External API client",
+                "enabled": True,
+                "publicClient": False,
+                "secret": secret,
+                "protocol": "openid-connect",
+                "standardFlowEnabled": False,
+                "directAccessGrantsEnabled": False,
+                "serviceAccountsEnabled": True,
+                "authorizationServicesEnabled": False,
+                "protocolMappers": list(_INGEST_PROTOCOL_MAPPERS),
+            },
+        )
+        if response.status_code not in (201, 204):
+            raise RuntimeError(
+                f"create {EXTERNAL_CLIENT_ID} {response.status_code}: {response.text}"
+            )
+        existing = _find_client(admin, EXTERNAL_CLIENT_ID)
+        if existing is None:
+            raise RuntimeError(f"created {EXTERNAL_CLIENT_ID} but could not reload it")
+        print(f"[ok] created keycloak client {EXTERNAL_CLIENT_ID} id={existing.get('id')}")
+    else:
+        print(
+            f"[ok] keycloak client {EXTERNAL_CLIENT_ID} id={existing.get('id')} "
+            "(secret unchanged)"
+        )
+
+    client_uuid = existing["id"]
+    full = _json(admin.get(f"/clients/{client_uuid}"))
+    changed = False
+    if full.get("directAccessGrantsEnabled"):
+        full["directAccessGrantsEnabled"] = False
+        changed = True
+    if full.get("standardFlowEnabled"):
+        full["standardFlowEnabled"] = False
+        changed = True
+    if not full.get("serviceAccountsEnabled"):
+        full["serviceAccountsEnabled"] = True
+        changed = True
+    if full.get("publicClient"):
+        full["publicClient"] = False
+        changed = True
+    if full.get("authorizationServicesEnabled"):
+        full["authorizationServicesEnabled"] = False
+        changed = True
+    attributes = dict(full.get("attributes") or {})
+    if attributes.get("pkce.code.challenge.method"):
+        attributes["pkce.code.challenge.method"] = ""
+        full["attributes"] = attributes
+        changed = True
+    if changed:
+        response = admin.put(f"/clients/{client_uuid}", json=full)
+        if response.is_error:
+            raise RuntimeError(
+                f"update {EXTERNAL_CLIENT_ID} {response.status_code}: {response.text}"
+            )
+        print(f"[ok] {EXTERNAL_CLIENT_ID} flags corrected (secret unchanged)")
+    else:
+        print(f"[ok] {EXTERNAL_CLIENT_ID} direct access grants off")
+
+    for mapper in _INGEST_PROTOCOL_MAPPERS:
+        _ensure_protocol_mapper(admin, EXTERNAL_CLIENT_ID, client_uuid, mapper)
+
+    sa = _json(admin.get(f"/clients/{client_uuid}/service-account-user"))
+    if not sa or not sa.get("id"):
+        raise RuntimeError(f"{EXTERNAL_CLIENT_ID} service-account user missing")
+    sa_id = sa["id"]
+    _ensure_realm_roles(admin, sa_id, set(EXTERNAL_REALM_ROLES), only=False)
+    current = _json(admin.get(f"/users/{sa_id}/role-mappings/realm")) or []
+    extra = [role for role in current if role.get("name") == INGEST_REALM_ROLE]
+    if extra:
+        response = admin.request(
+            "DELETE",
+            f"/users/{sa_id}/role-mappings/realm",
+            json=extra,
+        )
+        if response.is_error:
+            raise RuntimeError(
+                f"remove {INGEST_REALM_ROLE} from {EXTERNAL_CLIENT_ID} "
+                f"{response.status_code}: {response.text}"
+            )
+        print(f"[ok] removed {INGEST_REALM_ROLE} from {EXTERNAL_CLIENT_ID} service account")
+    current_names = {
+        role["name"]
+        for role in (_json(admin.get(f"/users/{sa_id}/role-mappings/realm")) or [])
+    }
+    missing = EXTERNAL_REALM_ROLES - current_names
+    if missing:
+        raise RuntimeError(f"{EXTERNAL_CLIENT_ID} service account missing {sorted(missing)}")
+    if INGEST_REALM_ROLE in current_names:
+        raise RuntimeError(f"{EXTERNAL_CLIENT_ID} service account must not have {INGEST_REALM_ROLE}")
+    print(
+        f"[ok] {EXTERNAL_CLIENT_ID} service account realm roles "
+        f"{sorted(EXTERNAL_REALM_ROLES)}"
+    )
+
+    _ensure_group(admin, GROUPS_EMPTY_SENTINEL)
+    _ensure_group_membership(admin, sa_id, GROUPS_EMPTY_SENTINEL)
+    groups = _json(admin.get(f"/users/{sa_id}/groups")) or []
+    if not any(group.get("name") == GROUPS_EMPTY_SENTINEL for group in groups):
+        raise RuntimeError(f"{EXTERNAL_CLIENT_ID} service account missing group {GROUPS_EMPTY_SENTINEL}")
+    print(f"[ok] {EXTERNAL_CLIENT_ID} service account group {GROUPS_EMPTY_SENTINEL}")
+
+    rm_clients = _json(admin.get("/clients", params={"clientId": "realm-management"})) or []
+    if not rm_clients:
+        raise RuntimeError("realm-management client not found")
+    rm_id = rm_clients[0]["id"]
+    assigned = _json(admin.get(f"/users/{sa_id}/role-mappings/clients/{rm_id}")) or []
+    if assigned:
+        response = admin.request(
+            "DELETE",
+            f"/users/{sa_id}/role-mappings/clients/{rm_id}",
+            json=assigned,
+        )
+        if response.is_error:
+            raise RuntimeError(
+                f"remove realm-management roles from {EXTERNAL_CLIENT_ID} "
+                f"{response.status_code}: {response.text}"
+            )
+        print(f"[ok] removed realm-management roles from {EXTERNAL_CLIENT_ID} service account")
+    else:
+        print(f"[ok] {EXTERNAL_CLIENT_ID} service account has no realm-management roles")
+
+
 def configure() -> None:
     """Verify realm/clients and ensure seed users. Does not re-import realm.json."""
     verify_realm()
     admin = _admin_client()
     with admin:
         _ensure_ingest_client(admin)
+        _ensure_external_api_client(admin)
         clients = _get_clients(admin)
         _ensure_basic_scope(admin, clients)
         _ensure_groups_claim(admin, clients)
