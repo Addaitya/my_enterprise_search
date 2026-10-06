@@ -2,7 +2,7 @@
 
 Company-internal hybrid search (keyword + semantic) over uploaded files, with role- and group-based access control. v1 accepts local **PDF / TXT / CSV** uploads.
 
-**Now:** Compose stack, Keycloak PKCE login, FastAPI JWT, OpenSearch 3.8 JWKS + `files_searcher` DLS, Postgres identity mirror + `files` / `file_acl` / `upload_sessions` / `search_query_metrics` / `ingest_jobs` / `connectors` / `connector_syncs`, resumable ingest API, **ops folder ingest CLI**, **internal ingest API** (`ingest-client`, presigned PUT, complete indexes chunks and drops omitted sequences on re-sync; delete removes the file, its ACL, and indexed chunks), React multi-file `/upload`, **client-hybrid `POST /search`**, ACL-filtered **View files** + **Open** (MinIO stream), admin **Dashboard** (live stats; connector count, ingest rate, and last sync are live; other cards stay placeholders), **Access Control(Admin)** (Users / Roles / Groups / Access), **admin connector control plane** (BFF + Postgres mirror; pipeline create includes `callback_connector_id`, this API’s connector UUID, for the status callback; the pipeline service is not in this repo), **Configuration** ingestion on `/admin/connectors` (other sections stay local placeholders).
+**Now:** Compose stack, Keycloak PKCE login, FastAPI JWT, OpenSearch 3.8 JWKS + `files_searcher` DLS, Postgres identity mirror + `files` / `file_acl` / `upload_sessions` / `search_query_metrics` / `ingest_jobs` / `connectors` / `connector_syncs`, resumable ingest API, **ops folder ingest CLI**, **internal ingest API** (`ingest-client`, presigned PUT, complete indexes chunks and drops omitted sequences on re-sync; delete removes the file, its ACL, and indexed chunks), **machine search client** (`external-api-client`, client credentials, roles `admin` and `search-user`), React multi-file `/upload`, **client-hybrid `POST /search`**, ACL-filtered **View files** + **Open** (MinIO stream), admin **Dashboard** (live stats; connector count, ingest rate, and last sync are live; other cards stay placeholders), **Access Control(Admin)** (Users / Roles / Groups / Access), **admin connector control plane** (BFF + Postgres mirror; pipeline create includes `callback_connector_id`, this API’s connector UUID, for the status callback; the pipeline service is not in this repo), **Configuration** ingestion on `/admin/connectors` (other sections stay local placeholders).
 
 **Not yet:** Check-access explorer / audit CSV, Task 7 SKIP LOCKED + dual-write repair, native OpenSearch `hybrid`+DLS (needs 3.9+; product path uses client-side merge on 3.8), content-hash dedup, auto-ACL after ingest.
 
@@ -12,7 +12,7 @@ Company-internal hybrid search (keyword + semantic) over uploaded files, with ro
 | --- | --- |
 | Backend | FastAPI, SQLAlchemy, Alembic, uv |
 | Frontend | React, Vite, Tailwind, Zustand, bun |
-| Auth | Keycloak 26.2 (`web-client` PKCE, `api-client` for the API) |
+| Auth | Keycloak 26.2 (`web-client` PKCE, `api-client` for the API, `external-api-client` for machine search) |
 | Search | OpenSearch 3.8.0 (ML Commons MiniLM ONNX embeddings; JWT via Keycloak JWKS) |
 | Storage | PostgreSQL 16 (identity mirror, file metadata, ACL, upload sessions), MinIO (bytes) |
 
@@ -52,7 +52,7 @@ Primary path — one command from the repo root ([setup/README.md](setup/README.
 ./setup/setup.sh --with-seed --start
 ```
 
-This checks prereqs, copies env samples if missing, brings Compose up, waits for services, runs Alembic + `init_services`, installs frontend deps, and prints URLs / seed users. Re-runs are idempotent; existing `.env` files are not overwritten unless `--force-env`. A missing `KEYCLOAK_INGEST_SECRET` is appended from the sample.
+This checks prereqs, copies env samples if missing, brings Compose up, waits for services, runs Alembic + `init_services`, installs frontend deps, and prints URLs / seed users. Re-runs are idempotent; existing `.env` files are not overwritten unless `--force-env`. A missing `KEYCLOAK_INGEST_SECRET` or `KEYCLOAK_EXTERNAL_SECRET` is appended from the sample.
 
 An already-running stack can pick up the internal ingest interface without a full bootstrap:
 
@@ -115,7 +115,7 @@ Vite proxies `/api` → FastAPI. Sign in, then:
 - **Access Control(Admin)** (`/admin`, realm `admin`) — Users / Roles / Groups / Access (file grants + members)
 - **Configuration** (`/configuration`, realm `admin`) — Ingestion talks to `/admin/connectors`. Other sections stay local placeholders.
 
-`GET /health` is public. Product routes (`/auth/me`, `/search`, `/files*`, `/files/uploads*`) require a Bearer token. Admin identity/ACL routes, `GET /admin/stats`, and `/admin/connectors` require realm role `admin`. `/internal/*` requires realm role `ingest-service` (client `ingest-client`, secret `KEYCLOAK_INGEST_SECRET`). The folder CLI talks to Postgres / MinIO / OpenSearch directly — no JWT and no `/files/uploads` session.
+`GET /health` is public. Product routes (`/auth/me`, `/search`, `/files*`, `/files/uploads*`) require a Bearer token. Admin identity/ACL routes, `GET /admin/stats`, and `/admin/connectors` require realm role `admin`. `/internal/*` requires realm role `ingest-service` (client `ingest-client`, secret `KEYCLOAK_INGEST_SECRET`). An external service uses `external-api-client` (secret `KEYCLOAK_EXTERNAL_SECRET`) and calls `POST /search` with that Bearer; do not send the token to OpenSearch directly. The folder CLI talks to Postgres / MinIO / OpenSearch directly — no JWT and no `/files/uploads` session.
 
 `MINIO_PRESIGN_ENDPOINT` defaults to `minio:9000` (the host inside the presigned PUT URL). Set it to `localhost:9000` only when a process on the host must PUT that URL. An empty `INGESTION_PIPELINE_URL` makes connector create and sync return **503**. A URL that does not connect returns **502**, and no connector row is kept.
 
@@ -151,9 +151,50 @@ cd backend && uv run python -m init_services
 | `realm-admin` | `adminpass` | Search + Admin |
 | `searcher` | `searcherpass` | Search only |
 
-SPA client: `web-client`. API and OpenSearch audience: `api-client`. Machine ingest client: `ingest-client` (realm role `ingest-service` only; secret `KEYCLOAK_INGEST_SECRET`).
+SPA client: `web-client`. API and OpenSearch audience: `api-client`. Machine ingest client: `ingest-client` (realm role `ingest-service` only; secret `KEYCLOAK_INGEST_SECRET`). Machine search client: `external-api-client` (realm roles `admin` and `search-user`, group `_empty`; secret `KEYCLOAK_EXTERNAL_SECRET`, demo `external-api-client-secret`).
 
-After a successful mirror you should see seed users plus Keycloak built-ins and the `api-client` service account (typically users=3, roles=5, groups=`engineering` + `_empty`).
+### Machine search (external service)
+
+Stack up, API on `:8000`, and `uv run python -m init_services` already run. A Keycloak restart does not reimport `realm.json` on an existing realm; init creates `external-api-client` if it is missing and does not rotate a secret that is already set.
+
+```bash
+cd backend && uv run python -m scripts.external_api_client_proof
+```
+
+That script checks the token, `GET /auth/admin-ping`, and `POST /search` through FastAPI. The curl steps below are the same checks by hand.
+
+```bash
+export KEYCLOAK_EXTERNAL_SECRET=external-api-client-secret
+export TOKEN=$(curl -sS -X POST \
+  "http://localhost:8080/realms/enterprise-search-realm/protocol/openid-connect/token" \
+  -d grant_type=client_credentials \
+  -d client_id=external-api-client \
+  -d client_secret="$KEYCLOAK_EXTERNAL_SECRET" \
+  | python3 -c 'import json,sys; print(json.load(sys.stdin)["access_token"])')
+# decode and confirm aud includes api-client, roles include admin and search-user
+python3 -c "import json,base64,os; p=os.environ['TOKEN'].split('.')[1]+'=='; print(json.dumps(json.loads(base64.urlsafe_b64decode(p)), indent=2))"
+curl -sS -o /dev/null -w "admin-ping %{http_code}\n" \
+  -H "Authorization: Bearer $TOKEN" \
+  http://localhost:8000/auth/admin-ping
+curl -sS -X POST http://localhost:8000/search \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"q":"alpha-proof-token","size":10}'
+# no Bearer, and a bad secret, are both 401
+curl -sS -o /dev/null -w "search-no-auth %{http_code}\n" \
+  -X POST http://localhost:8000/search \
+  -H "Content-Type: application/json" \
+  -d '{"q":"alpha-proof-token","size":10}'
+curl -sS -o /dev/null -w "token-bad-secret %{http_code}\n" \
+  -X POST "http://localhost:8080/realms/enterprise-search-realm/protocol/openid-connect/token" \
+  -d grant_type=client_credentials \
+  -d client_id=external-api-client \
+  -d client_secret=wrong-secret
+```
+
+Pass: token request 200 with `access_token`; JWT `aud` includes `api-client` and `roles` includes `admin` and `search-user`; `GET /auth/admin-ping` is 200; `POST /search` is 200 (empty hits are fine when no ACL-visible chunks exist; if proof docs exist, `proof-role-search-user` should be among the hits). 401 or 403 on search is a failure. The bad-secret token request and a search with no Bearer are 401.
+
+After a successful mirror you should see seed users plus Keycloak built-ins and service accounts (`api-client`, `ingest-client`, and `external-api-client`). Identity sync may insert `service-account-external-api-client`; that row is expected. Groups stay `engineering` and `_empty`.
 
 ### Admin Dashboard, Access Control, Configuration
 

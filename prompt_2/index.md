@@ -8,7 +8,7 @@
 
 | Note | Covers |
 | --- | --- |
-| `prompt_2/context/auth.md` | PKCE, JWT, JWKS, seed users, files_searcher, ingest-client |
+| `prompt_2/context/auth.md` | PKCE, JWT, JWKS, seed users, files_searcher, ingest-client, external-api-client |
 | `prompt_2/context/data_model.md` | Identity mirror, files, file_acl, ingest_jobs, connectors |
 | `prompt_2/context/search.md` | Index, MiniLM, DLS, client hybrid on 3.8 |
 | `prompt_2/context/ingest.md` | HTTP upload, folder CLI, and /internal reserve/complete |
@@ -25,6 +25,8 @@ The frozen plan file was not in this checkout, so it is not listed. The implemen
 **Implemented record (not product truth):** `prompt_2/frontend_ui_plan.md` — frontend restyle and local placeholders. Shipped. Do not treat the checklist as open work.
 
 **Implemented record (not product truth):** `prompt_2/internal_ingest_log.md` — `/internal` ingest API and connector control plane. Product truth is `prompt_2/current.md`. The pipeline service is not in this repo. The frozen Airbyte proposal stays unfinished.
+
+**Caller guide (not product truth):** `prompt_2/external_service_caller/how_connect.md` — how an external service gets an `external-api-client` token and calls `POST /search`.
 
 ## Briefs
 

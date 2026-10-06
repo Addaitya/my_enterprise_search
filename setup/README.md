@@ -19,7 +19,7 @@ One-command bootstrap from the repo root:
 7. `bun install`
 8. Optional ACL seed / proofs / `./start-dev.sh`
 
-Re-runs are safe (idempotent). Existing `.env` files are **not** overwritten unless `--force-env`. A root `.env` created before internal ingest is missing `KEYCLOAK_INGEST_SECRET`; setup appends that one key from the sample and leaves every other key as it is.
+Re-runs are safe (idempotent). Existing `.env` files are **not** overwritten unless `--force-env`. A root `.env` created before these keys existed is missing `KEYCLOAK_INGEST_SECRET` or `KEYCLOAK_EXTERNAL_SECRET`; setup appends each missing key from the sample and leaves every other key as it is.
 
 ## Flags
 

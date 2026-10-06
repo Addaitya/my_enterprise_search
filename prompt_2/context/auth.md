@@ -12,9 +12,11 @@ Search forwards the same user Bearer to OpenSearch. Ingest and admin OpenSearch 
 
 ## Keycloak
 
-Realm `enterprise-search-realm`. Clients `api-client`, `web-client`, and `ingest-client`. Direct access grants stay off on `web-client`. Keycloak 26 `basic` client scope is assigned so tokens include `sub`.
+Realm `enterprise-search-realm`. Clients `api-client`, `web-client`, `ingest-client`, and `external-api-client`. Direct access grants stay off on `web-client`. Keycloak 26 `basic` client scope is assigned so tokens include `sub`.
 
 `ingest-client` is confidential, service accounts on, direct access grants off, no PKCE. Its only realm role is `ingest-service`. The audience mapper sets `aud=api-client`. It has no product roles (`admin`, `search-user`) and no OpenSearch role mapping. `/internal/*` requires `ingest-service`. The secret is `KEYCLOAK_INGEST_SECRET`.
+
+`external-api-client` is the same kind of confidential client (service accounts on, standard flow off, direct access grants off, no PKCE, `basic` scope, same roles and groups mappers, audience `aud=api-client`). Its service account `service-account-external-api-client` has product roles `admin` and `search-user` and group `_empty` so the `groups` claim is present. It does not get `ingest-service` or `realm-management`. The secret is `KEYCLOAK_EXTERNAL_SECRET` (demo `external-api-client-secret`). Init creates or fixes the client on an existing realm and does not rotate a secret that is already set. Identity sync may insert that service-account user; that row is expected and gets no automatic `file_acl`. Do not map JWT `admin` onto OpenSearch `files_searcher` or `all_access`. Search with this token still goes through FastAPI, which forwards the Bearer.
 
 Seed users (local):
 
